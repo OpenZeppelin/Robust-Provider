@@ -1,0 +1,29 @@
+[package]
+name = "robust-provider"
+authors = ["OpenZeppelin"]
+license = "MIT"
+edition = "2024"
+# repository = "https://github.com/OpenZeppelin/Event-Scanner"
+version = "0.1.0"
+
+
+[workspace.lints.clippy]
+pedantic = "warn"
+all = "warn"
+
+
+[dependencies]
+alloy = { version = "1.1.2", features = ["full"] }
+alloy-node-bindings = "1.1.2"
+tokio = { version = "1.48", features = ["full"] }
+tracing = "0.1"
+futures = "0.3.31"
+backon = "1.6.0"
+tokio-stream = "0.1.17"
+thiserror = "2.0.17"
+tokio-util = "0.7.17"
+anyhow = "1.0"
+
+
+[features]
+tracing = []
