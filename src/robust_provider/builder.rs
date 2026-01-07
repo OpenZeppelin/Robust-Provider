@@ -66,8 +66,7 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
     /// Fallback providers are used when the primary provider times out or fails.
     #[must_use]
     pub fn fallback<F: IntoRootProvider<N> + Send + 'static>(mut self, provider: F) -> Self {
-        self.fallback_providers
-            .push(Box::pin(provider.into_root_provider()));
+        self.fallback_providers.push(Box::pin(provider.into_root_provider()));
         self
     }
 
