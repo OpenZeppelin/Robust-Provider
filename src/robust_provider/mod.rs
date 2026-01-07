@@ -26,7 +26,7 @@
 //!
 //! ```rust,no_run
 //! use alloy::providers::{Provider, ProviderBuilder};
-//! use event_scanner::robust_provider::RobustProviderBuilder;
+//! use robust_provider::RobustProviderBuilder;
 //! use std::time::Duration;
 //! use tokio_stream::StreamExt;
 //!

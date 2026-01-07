@@ -7,7 +7,7 @@
 macro_rules! error {
     ($($arg:tt)*) => {
         if cfg!(feature = "tracing") {
-            tracing::error!(target: "event_scanner", $($arg)*)
+            tracing::error!(target: "robust_provider", $($arg)*)
         }
     };
 }
@@ -16,7 +16,7 @@ macro_rules! error {
 macro_rules! warn {
     ($($arg:tt)*) => {
         if cfg!(feature = "tracing") {
-            tracing::warn!(target: "event_scanner", $($arg)*)
+            tracing::warn!(target: "robust_provider", $($arg)*)
         }
     };
 }
@@ -25,7 +25,7 @@ macro_rules! warn {
 macro_rules! info {
     ($($arg:tt)*) => {
         if cfg!(feature = "tracing") {
-            tracing::info!(target: "event_scanner", $($arg)*)
+            tracing::info!(target: "robust_provider", $($arg)*)
         }
     };
 }
@@ -34,7 +34,7 @@ macro_rules! info {
 macro_rules! debug {
     ($($arg:tt)*) => {
         if cfg!(feature = "tracing") {
-            tracing::debug!(target: "event_scanner", $($arg)*)
+            tracing::debug!(target: "robust_provider", $($arg)*)
         }
     };
 }
@@ -43,7 +43,7 @@ macro_rules! debug {
 macro_rules! trace {
     ($($arg:tt)*) => {
         if cfg!(feature = "tracing") {
-            tracing::trace!(target: "event_scanner", $($arg)*)
+            tracing::trace!(target: "robust_provider", $($arg)*)
         }
     };
 }
