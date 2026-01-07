@@ -1,10 +1,17 @@
 [package]
 name = "robust-provider"
+description = "Robust Provider is a library for creating resilient RPC providers for EVM-based blockchains with automatic retries and failover support."
 authors = ["OpenZeppelin"]
 license = "MIT"
 edition = "2024"
 repository = "https://github.com/OpenZeppelin/Robust-Provider"
 version = "0.1.0"
+categories = [
+    "asynchronous",
+    "web-programming",
+    "cryptography::cryptocurrencies",
+]
+keywords = ["evm", "ethereum", "blockchain", "rpc", "alloy"]
 
 
 [workspace.lints.clippy]
