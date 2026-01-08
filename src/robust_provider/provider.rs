@@ -80,6 +80,14 @@ impl From<super::subscription::Error> for Error {
     }
 }
 
+/// Default number of blocks required for finalization.
+///
+/// This is used by [`RobustProvider::get_safe_finalized_block`] and
+/// [`RobustProvider::get_safe_finalized_block_number`] to determine whether
+/// the chain has reached sufficient height for finalization queries.
+/// On Ethereum mainnet, finalization typically occurs after 64 blocks.
+pub const DEFAULT_FINALIZATION_HEIGHT: u64 = 64;
+
 /// Provider wrapper with built-in retry and timeout mechanisms.
 ///
 /// This wrapper around Alloy providers automatically handles retries,
@@ -94,6 +102,7 @@ pub struct RobustProvider<N: Network = Ethereum> {
     pub(crate) min_delay: Duration,
     pub(crate) reconnect_interval: Duration,
     pub(crate) subscription_buffer_capacity: usize,
+    pub(crate) finalization_height: u64,
 }
 
 impl<N: Network> RobustProvider<N> {
@@ -213,6 +222,68 @@ impl<N: Network> RobustProvider<N> {
         let latest_block = self.get_block_number().await?;
         let confirmed_block = latest_block.saturating_sub(confirmations);
         Ok(confirmed_block)
+    }
+
+    /// Fetch the finalized block, falling back to genesis if finalization hasn't occurred yet.
+    ///
+    /// This method handles the behavioral difference between development nodes (like Anvil) and
+    /// production nodes when querying for finalized blocks on young chains.
+    ///
+    /// If the current chain height is less than
+    /// [`finalization_height`](RobustProviderBuilder::finalization_height) (default 64), this
+    /// method returns the earliest block (genesis) instead of querying for the finalized block,
+    /// which may not exist or behave inconsistently across node implementations.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    /// * [`Error::BlockNotFound`] - if the block was not found on-chain.
+    pub async fn get_safe_finalized_block(&self) -> Result<N::BlockResponse, Error> {
+        let chain_height = self.get_block_number().await?;
+
+        if chain_height < self.finalization_height {
+            debug!(
+                chain_height = chain_height,
+                finalization_height = self.finalization_height,
+                "Chain height below finalization threshold, returning earliest block"
+            );
+            return self.get_block_by_number(BlockNumberOrTag::Earliest).await;
+        }
+
+        self.get_block_by_number(BlockNumberOrTag::Finalized).await
+    }
+
+    /// Fetch the finalized block number, falling back to 0 if finalization hasn't occurred yet.
+    ///
+    /// This method handles the behavioral difference between development nodes (like Anvil) and
+    /// production nodes when querying for finalized blocks on young chains.
+    ///
+    /// If the current chain height is less than
+    /// [`finalization_height`](RobustProviderBuilder::finalization_height) (default 64), this
+    /// method returns 0 instead of querying for the finalized block number, which may not exist
+    /// or behave inconsistently across node implementations.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    /// * [`Error::BlockNotFound`] - if the block was not found on-chain.
+    pub async fn get_safe_finalized_block_number(&self) -> Result<BlockNumber, Error> {
+        let chain_height = self.get_block_number().await?;
+
+        if chain_height < self.finalization_height {
+            debug!(
+                chain_height = chain_height,
+                finalization_height = self.finalization_height,
+                "Chain height below finalization threshold, returning 0"
+            );
+            return Ok(0);
+        }
+
+        self.get_block_number_by_id(BlockNumberOrTag::Finalized.into()).await
     }
 
     /// Fetch a block by [`BlockHash`] with retry and timeout.
@@ -454,6 +525,7 @@ mod tests {
             min_delay: Duration::from_millis(min_delay),
             reconnect_interval: DEFAULT_RECONNECT_INTERVAL,
             subscription_buffer_capacity: DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY,
+            finalization_height: DEFAULT_FINALIZATION_HEIGHT,
         }
     }
 
@@ -804,4 +876,35 @@ mod tests {
 
         Ok(())
     }
+
+    // TODO: these need to be tested with live nodes
+
+    //     #[tokio::test]
+    //     async fn test_get_safe_finalized_block_with_small_chain_height() -> anyhow::Result<()> {
+    //         // With only genesis block, finalized block may not be available on real nodes
+    //         // but Anvil returns block 0. Either way, get_safe_finalized_block should succeed.
+    //         let (_anvil, robust, _alloy_provider) = setup_anvil_with_blocks(0).await?;
+    //
+    //         let safe_finalized = robust.get_safe_finalized_block().await?;
+    //
+    //         // Should return genesis or block 0 (Anvil behavior)
+    //         assert_eq!(safe_finalized.header.number, 0);
+    //
+    //         Ok(())
+    //     }
+    //
+    //     #[tokio::test]
+    //     async fn test_get_safe_finalized_block_number_with_small_chain_height() ->
+    // anyhow::Result<()> {         // With only genesis block, finalized block number may not
+    // be available on real nodes         // but Anvil returns 0. Either way,
+    // get_safe_finalized_block_number should succeed.         let (_anvil, robust,
+    // _alloy_provider) = setup_anvil_with_blocks(0).await?;
+    //
+    //         let safe_finalized_num = robust.get_safe_finalized_block_number().await?;
+    //
+    //         // Should return 0 (either directly from Anvil or as fallback)
+    //         assert_eq!(safe_finalized_num, 0);
+    //
+    //         Ok(())
+    //     }
 }
