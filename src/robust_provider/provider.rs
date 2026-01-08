@@ -230,7 +230,7 @@ impl<N: Network> RobustProvider<N> {
     /// production nodes when querying for finalized blocks on young chains.
     ///
     /// If the current chain height is less than
-    /// [`finalization_height`](RobustProviderBuilder::finalization_height) (default 64), this
+    /// [`finalization_height`](super::RobustProviderBuilder::finalization_height) (default 64), this
     /// method returns the earliest block (genesis) instead of querying for the finalized block,
     /// which may not exist or behave inconsistently across node implementations.
     ///
@@ -261,7 +261,7 @@ impl<N: Network> RobustProvider<N> {
     /// production nodes when querying for finalized blocks on young chains.
     ///
     /// If the current chain height is less than
-    /// [`finalization_height`](RobustProviderBuilder::finalization_height) (default 64), this
+    /// [`finalization_height`](super::RobustProviderBuilder::finalization_height) (default 64), this
     /// method returns 0 instead of querying for the finalized block number, which may not exist
     /// or behave inconsistently across node implementations.
     ///
