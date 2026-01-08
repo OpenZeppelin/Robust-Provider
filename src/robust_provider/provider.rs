@@ -877,34 +877,33 @@ mod tests {
         Ok(())
     }
 
-    // TODO: these need to be tested with live nodes
+    #[tokio::test]
+    #[ignore = "This currently passes but does not test against a 'real' node - see issue https://github.com/OpenZeppelin/Robust-Provider/issues/7 "]
+    async fn test_get_safe_finalized_block_with_small_chain_height() -> anyhow::Result<()> {
+        // With only genesis block, finalized block may not be available on real nodes
+        // but Anvil returns block 0. Either way, get_safe_finalized_block should succeed.
+        let (_anvil, robust, _alloy_provider) = setup_anvil_with_blocks(0).await?;
 
-    //     #[tokio::test]
-    //     async fn test_get_safe_finalized_block_with_small_chain_height() -> anyhow::Result<()> {
-    //         // With only genesis block, finalized block may not be available on real nodes
-    //         // but Anvil returns block 0. Either way, get_safe_finalized_block should succeed.
-    //         let (_anvil, robust, _alloy_provider) = setup_anvil_with_blocks(0).await?;
-    //
-    //         let safe_finalized = robust.get_safe_finalized_block().await?;
-    //
-    //         // Should return genesis or block 0 (Anvil behavior)
-    //         assert_eq!(safe_finalized.header.number, 0);
-    //
-    //         Ok(())
-    //     }
-    //
-    //     #[tokio::test]
-    //     async fn test_get_safe_finalized_block_number_with_small_chain_height() ->
-    // anyhow::Result<()> {         // With only genesis block, finalized block number may not
-    // be available on real nodes         // but Anvil returns 0. Either way,
-    // get_safe_finalized_block_number should succeed.         let (_anvil, robust,
-    // _alloy_provider) = setup_anvil_with_blocks(0).await?;
-    //
-    //         let safe_finalized_num = robust.get_safe_finalized_block_number().await?;
-    //
-    //         // Should return 0 (either directly from Anvil or as fallback)
-    //         assert_eq!(safe_finalized_num, 0);
-    //
-    //         Ok(())
-    //     }
+        let safe_finalized = robust.get_safe_finalized_block().await?;
+
+        // Should return genesis or block 0 (Anvil behavior)
+        assert_eq!(safe_finalized.header.number, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "This currently passes but does not test against a 'real' node - see issue https://github.com/OpenZeppelin/Robust-Provider/issues/7 "]
+    async fn test_get_safe_finalized_block_number_with_small_chain_height() -> anyhow::Result<()> {
+        // With only genesis block, finalized block number may not be available on real nodes
+        // but Anvil returns 0. Either way, get_safe_finalized_block_number should succeed.
+        let (_anvil, robust, _alloy_provider) = setup_anvil_with_blocks(0).await?;
+
+        let safe_finalized_num = robust.get_safe_finalized_block_number().await?;
+
+        // Should return 0 (either directly from Anvil or as fallback)
+        assert_eq!(safe_finalized_num, 0);
+
+        Ok(())
+    }
 }
