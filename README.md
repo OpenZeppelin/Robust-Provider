@@ -192,11 +192,11 @@ Converts any `IntoRootProvider` type directly into a `RobustProvider` with defau
 use robust_provider::IntoRobustProvider;
 
 // Convert a URL directly to a RobustProvider
-let robust = "ws://localhost:8545".into_robust_provider().await?;
+let robust: RobustProvider<Ethereum> = "ws://localhost:8545".into().await?;
 
 // Or convert an existing provider
 let provider = ProviderBuilder::new().connect("ws://localhost:8545").await?;
-let robust = provider.into_robust_provider().await?;
+let robust: RobustProvider<Ethereum> = provider.into().await?;
 ```
 
 ---
