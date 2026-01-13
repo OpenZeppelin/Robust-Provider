@@ -1,5 +1,8 @@
 //! Common test utilities and helpers for integration tests.
 
+#![allow(dead_code)]
+#![allow(clippy::missing_errors_doc)]
+
 use std::time::Duration;
 
 use alloy::providers::{Provider, ProviderBuilder, RootProvider, ext::AnvilApi};
@@ -15,7 +18,7 @@ pub const RECONNECT_INTERVAL: Duration = Duration::from_millis(500);
 /// Buffer time for async operations.
 pub const BUFFER_TIME: Duration = Duration::from_millis(100);
 
-/// Setup a basic Anvil instance with a RobustProvider.
+/// Setup a basic Anvil instance with a `RobustProvider`.
 pub async fn setup_anvil() -> anyhow::Result<(AnvilInstance, RobustProvider, impl Provider)> {
     let anvil = Anvil::new().try_spawn()?;
     let alloy_provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());

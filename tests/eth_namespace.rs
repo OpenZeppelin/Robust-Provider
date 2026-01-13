@@ -1,7 +1,7 @@
-//! Tests for Ethereum JSON-RPC namespace methods exposed by RobustProvider.
+//! Tests for Ethereum JSON-RPC namespace methods exposed by `RobustProvider`.
 //!
 //! These tests verify the behavior of standard Ethereum RPC methods wrapped
-//! by RobustProvider with retry and failover logic.
+//! by `RobustProvider` with retry and failover logic.
 
 mod common;
 
@@ -9,7 +9,6 @@ use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     primitives::BlockHash,
     providers::{Provider, ext::AnvilApi},
-    rpc::types::Filter,
 };
 use common::{setup_anvil, setup_anvil_with_blocks};
 use robust_provider::Error;

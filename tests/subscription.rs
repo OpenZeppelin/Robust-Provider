@@ -1,4 +1,4 @@
-//! Tests for RobustSubscription and block subscription functionality.
+//! Tests for `RobustSubscription` and block subscription functionality.
 //!
 //! These tests cover WebSocket subscriptions, failover behavior,
 //! reconnection logic, and stream handling.

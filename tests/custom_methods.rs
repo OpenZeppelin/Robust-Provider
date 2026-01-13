@@ -1,6 +1,6 @@
-//! Tests for RobustProvider custom methods.
+//! Tests for `RobustProvider` custom methods.
 //!
-//! These tests cover methods that are unique to RobustProvider and not
+//! These tests cover methods that are unique to `RobustProvider` and not
 //! direct wrappers of standard Ethereum JSON-RPC methods.
 
 mod common;
