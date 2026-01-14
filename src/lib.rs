@@ -1,5 +1,5 @@
 #[macro_use]
-pub mod macros;
+pub mod logging;
 
 mod robust_provider;
 
