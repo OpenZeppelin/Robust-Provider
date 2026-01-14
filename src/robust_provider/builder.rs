@@ -3,9 +3,7 @@ use std::{pin::Pin, time::Duration};
 use alloy::{network::Network, providers::RootProvider};
 
 use crate::robust_provider::{
-    IntoRootProvider, RobustProvider,
-    provider::{DEFAULT_FINALIZATION_HEIGHT, Error},
-    subscription::DEFAULT_RECONNECT_INTERVAL,
+    IntoRootProvider, RobustProvider, provider::Error, subscription::DEFAULT_RECONNECT_INTERVAL,
 };
 
 type BoxedProviderFuture<N> = Pin<Box<dyn Future<Output = Result<RootProvider<N>, Error>> + Send>>;
@@ -34,7 +32,6 @@ pub struct RobustProviderBuilder<N: Network, P: IntoRootProvider<N>> {
     min_delay: Duration,
     reconnect_interval: Duration,
     subscription_buffer_capacity: usize,
-    finalization_height: u64,
 }
 
 impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
@@ -53,7 +50,6 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
             min_delay: DEFAULT_MIN_DELAY,
             reconnect_interval: DEFAULT_RECONNECT_INTERVAL,
             subscription_buffer_capacity: DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY,
-            finalization_height: DEFAULT_FINALIZATION_HEIGHT,
         }
     }
 
@@ -129,23 +125,6 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
         self
     }
 
-    /// Set the number of blocks required before finalization is expected.
-    ///
-    /// This is used by [`RobustProvider::get_safe_finalized_block`] and
-    /// [`RobustProvider::get_safe_finalized_block_number`] to determine whether
-    /// to query for the finalized block or fall back to genesis.
-    ///
-    /// If the chain height is less than this value, the safe finalized methods
-    /// will return the earliest block (genesis) instead of querying for the
-    /// finalized block, which may not exist on young chains.
-    ///
-    /// Default is [`DEFAULT_FINALIZATION_HEIGHT`] (64 blocks).
-    #[must_use]
-    pub fn finalization_height(mut self, height: u64) -> Self {
-        self.finalization_height = height;
-        self
-    }
-
     /// Build the `RobustProvider`.
     ///
     /// Final builder method: consumes the builder and returns the built [`RobustProvider`].
@@ -181,7 +160,6 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
             min_delay: self.min_delay,
             reconnect_interval: self.reconnect_interval,
             subscription_buffer_capacity: self.subscription_buffer_capacity,
-            finalization_height: self.finalization_height,
         })
     }
 }
