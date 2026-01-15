@@ -48,7 +48,7 @@ async fn test_get_block_by_number_future_block_fails() -> anyhow::Result<()> {
     let future_block = 999_999;
     let result = robust.get_block_by_number(BlockNumberOrTag::Number(future_block)).await;
 
-    assert!(matches!(result, Err(Error::BlockNotFound(_))));
+    assert!(matches!(result, Err(Error::BlockNotFound)));
 
     Ok(())
 }
@@ -90,7 +90,7 @@ async fn test_get_block_by_hash_fails() -> anyhow::Result<()> {
     let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
 
     let result = robust.get_block_by_hash(BlockHash::ZERO).await;
-    assert!(matches!(result, Err(Error::BlockNotFound(_))));
+    assert!(matches!(result, Err(Error::BlockNotFound)));
 
     Ok(())
 }
@@ -159,11 +159,11 @@ async fn test_get_block_fails() -> anyhow::Result<()> {
 
     // Future block number
     let result = robust.get_block(BlockId::number(999_999)).await;
-    assert!(matches!(result, Err(Error::BlockNotFound(_))));
+    assert!(matches!(result, Err(Error::BlockNotFound)));
 
     // Non-existent hash
     let result = robust.get_block(BlockId::hash(BlockHash::ZERO)).await;
-    assert!(matches!(result, Err(Error::BlockNotFound(_))));
+    assert!(matches!(result, Err(Error::BlockNotFound)));
 
     Ok(())
 }
@@ -209,7 +209,7 @@ async fn test_get_block_number_by_id_fails() -> anyhow::Result<()> {
     let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
 
     let result = robust.get_block_number_by_id(BlockId::hash(BlockHash::ZERO)).await;
-    assert!(matches!(result, Err(Error::BlockNotFound(_))));
+    assert!(matches!(result, Err(Error::BlockNotFound)));
 
     Ok(())
 }
