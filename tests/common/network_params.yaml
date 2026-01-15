@@ -4,3 +4,6 @@ participants:
   - el_type: besu
   - el_type: reth
     cl_type: lighthouse
+
+# How long you want the network to wait before starting up
+genesis_delay: 1
