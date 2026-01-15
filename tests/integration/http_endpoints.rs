@@ -455,8 +455,13 @@ async fn test_get_logs_succeeds() -> anyhow::Result<()> {
     for endpoint in endpoints {
         let (robust, alloy_provider) = setup_robust_provider(&endpoint).await?;
 
-        // Query logs for the first few blocks (may be empty, but should not error)
-        let filter = Filter::new().from_block(0).to_block(100);
+        // Get latest block to use as upper bound
+        let latest_block =
+            ctx!(alloy_provider.get_block_by_number(BlockNumberOrTag::Latest), &endpoint.client)?
+                .expect("latest block should exist");
+
+        // Query logs from genesis to latest block (may be empty, but should not error)
+        let filter = Filter::new().from_block(0).to_block(latest_block.header.number);
 
         let robust_logs = ctx!(robust.get_logs(&filter), &endpoint.client)?;
         let alloy_logs = ctx!(alloy_provider.get_logs(&filter), &endpoint.client)?;
@@ -479,15 +484,28 @@ async fn test_get_logs_empty_range() -> anyhow::Result<()> {
     for endpoint in endpoints {
         let (robust, _) = setup_robust_provider(&endpoint).await?;
 
-        // Query logs for future blocks - should return empty, not error
+        // Query logs for future blocks - Geth returns "invalid block range params" error
         let filter = Filter::new().from_block(999_999_990).to_block(999_999_999);
 
-        let logs = ctx!(robust.get_logs(&filter), &endpoint.client)?;
-        assert!(
-            logs.is_empty(),
-            "Expected empty logs for future blocks, client: {}",
-            endpoint.client
-        );
+        let result = robust.get_logs(&filter).await;
+
+        // Geth returns error code -32000: "invalid block range params" for future block ranges
+        // Other clients may return empty logs or similar errors
+        match &result {
+            Ok(logs) => {
+                assert!(
+                    logs.is_empty(),
+                    "Expected empty logs for future blocks, client: {}",
+                    endpoint.client
+                );
+            }
+            Err(Error::RpcError(_)) => {
+                // Accept any RPC error for invalid block ranges (e.g., Geth's -32000)
+            }
+            Err(e) => {
+                panic!("Unexpected error type for client: {}, got: {:?}", endpoint.client, e);
+            }
+        }
     }
 
     Ok(())
