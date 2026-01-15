@@ -1,0 +1,6 @@
+participants:
+  - el_type: geth
+  - el_type: nethermind
+  - el_type: besu
+  - el_type: reth
+    cl_type: lighthouse
