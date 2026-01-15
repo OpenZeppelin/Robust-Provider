@@ -81,6 +81,12 @@ async fn test_get_block_by_number_succeeds() -> anyhow::Result<()> {
     for endpoint in endpoints {
         let (robust, alloy_provider) = setup_robust_provider(&endpoint).await?;
 
+        // Get latest block to check if this is a "young chain" (< 64 blocks)
+        let latest_block =
+            ctx!(alloy_provider.get_block_by_number(BlockNumberOrTag::Latest), &endpoint.client)?
+                .expect("latest block should exist");
+        let is_young_chain = latest_block.header.number < 64;
+
         let tags = [
             BlockNumberOrTag::Number(0),
             BlockNumberOrTag::Latest,
@@ -90,6 +96,20 @@ async fn test_get_block_by_number_succeeds() -> anyhow::Result<()> {
         ];
 
         for tag in tags {
+            // For young chains, Safe and Finalized tags will return BlockNotFound
+            if is_young_chain && matches!(tag, BlockNumberOrTag::Safe | BlockNumberOrTag::Finalized)
+            {
+                let result = robust.get_block_by_number(tag).await;
+                assert!(
+                    matches!(result, Err(Error::BlockNotFound)),
+                    "Expected BlockNotFound for young chain client: {}, tag: {:?}, got: {:?}",
+                    endpoint.client,
+                    tag,
+                    result
+                );
+                continue;
+            }
+
             let robust_block = ctx!(robust.get_block_by_number(tag), &endpoint.client)?;
             let alloy_block = ctx!(alloy_provider.get_block_by_number(tag), &endpoint.client)?
                 .expect("block should exist");
@@ -121,7 +141,7 @@ async fn test_get_block_by_number_future_block_fails() -> anyhow::Result<()> {
         let result = robust.get_block_by_number(BlockNumberOrTag::Number(future_block)).await;
 
         assert!(
-            matches!(result, Err(Error::BlockNotFound(_))),
+            matches!(result, Err(Error::BlockNotFound)),
             "Expected BlockNotFound for client: {}, got: {:?}",
             endpoint.client,
             result
@@ -175,7 +195,7 @@ async fn test_get_block_by_hash_fails() -> anyhow::Result<()> {
         let result = robust.get_block_by_hash(BlockHash::ZERO).await;
 
         assert!(
-            matches!(result, Err(Error::BlockNotFound(_))),
+            matches!(result, Err(Error::BlockNotFound)),
             "Expected BlockNotFound for client: {}, got: {:?}",
             endpoint.client,
             result
@@ -196,6 +216,12 @@ async fn test_get_block_succeeds() -> anyhow::Result<()> {
     for endpoint in endpoints {
         let (robust, alloy_provider) = setup_robust_provider(&endpoint).await?;
 
+        // Get latest block to check if this is a "young chain" (< 64 blocks)
+        let latest_block =
+            ctx!(alloy_provider.get_block_by_number(BlockNumberOrTag::Latest), &endpoint.client)?
+                .expect("latest block should exist");
+        let is_young_chain = latest_block.header.number < 64;
+
         let block_ids = [
             BlockId::number(0),
             BlockId::latest(),
@@ -205,6 +231,25 @@ async fn test_get_block_succeeds() -> anyhow::Result<()> {
         ];
 
         for block_id in block_ids {
+            // For young chains, Safe and Finalized tags will return BlockNotFound
+            if is_young_chain &&
+                matches!(
+                    block_id,
+                    BlockId::Number(BlockNumberOrTag::Safe) |
+                        BlockId::Number(BlockNumberOrTag::Finalized)
+                )
+            {
+                let result = robust.get_block(block_id).await;
+                assert!(
+                    matches!(result, Err(Error::BlockNotFound)),
+                    "Expected BlockNotFound for young chain client: {}, block_id: {:?}, got: {:?}",
+                    endpoint.client,
+                    block_id,
+                    result
+                );
+                continue;
+            }
+
             let robust_block = ctx!(robust.get_block(block_id), &endpoint.client)?;
             let alloy_block = ctx!(alloy_provider.get_block(block_id), &endpoint.client)?
                 .expect("block should exist");
@@ -248,7 +293,7 @@ async fn test_get_block_fails() -> anyhow::Result<()> {
         // Future block number
         let result = robust.get_block(BlockId::number(999_999_999)).await;
         assert!(
-            matches!(result, Err(Error::BlockNotFound(_))),
+            matches!(result, Err(Error::BlockNotFound)),
             "Expected BlockNotFound for future block, client: {}, got: {:?}",
             endpoint.client,
             result
@@ -257,7 +302,7 @@ async fn test_get_block_fails() -> anyhow::Result<()> {
         // Non-existent hash
         let result = robust.get_block(BlockId::hash(BlockHash::ZERO)).await;
         assert!(
-            matches!(result, Err(Error::BlockNotFound(_))),
+            matches!(result, Err(Error::BlockNotFound)),
             "Expected BlockNotFound for zero hash, client: {}, got: {:?}",
             endpoint.client,
             result
@@ -319,6 +364,27 @@ async fn test_get_block_number_by_id_succeeds() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_get_block_number_by_id_future_block_succeeds() -> anyhow::Result<()> {
+    let endpoints = load_el_endpoints()?;
+
+    for endpoint in endpoints {
+        let (robust, _) = setup_robust_provider(&endpoint).await?;
+
+        // Future block number - should return the number even if block doesn't exist
+        let future_block = 999_999_999;
+        let block_num =
+            ctx!(robust.get_block_number_by_id(BlockId::number(future_block)), &endpoint.client)?;
+        assert_eq!(
+            block_num, future_block,
+            "Future block number should be returned as-is for client: {}",
+            endpoint.client
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_get_block_number_by_id_fails() -> anyhow::Result<()> {
     let endpoints = load_el_endpoints()?;
 
@@ -328,7 +394,7 @@ async fn test_get_block_number_by_id_fails() -> anyhow::Result<()> {
         let result = robust.get_block_number_by_id(BlockId::hash(BlockHash::ZERO)).await;
 
         assert!(
-            matches!(result, Err(Error::BlockNotFound(_))),
+            matches!(result, Err(Error::BlockNotFound)),
             "Expected BlockNotFound for client: {}, got: {:?}",
             endpoint.client,
             result
@@ -399,6 +465,27 @@ async fn test_get_logs_succeeds() -> anyhow::Result<()> {
             robust_logs.len(),
             alloy_logs.len(),
             "Logs count mismatch for client: {}",
+            endpoint.client
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_logs_empty_range() -> anyhow::Result<()> {
+    let endpoints = load_el_endpoints()?;
+
+    for endpoint in endpoints {
+        let (robust, _) = setup_robust_provider(&endpoint).await?;
+
+        // Query logs for future blocks - should return empty, not error
+        let filter = Filter::new().from_block(999_999_990).to_block(999_999_999);
+
+        let logs = ctx!(robust.get_logs(&filter), &endpoint.client)?;
+        assert!(
+            logs.is_empty(),
+            "Expected empty logs for future blocks, client: {}",
             endpoint.client
         );
     }
