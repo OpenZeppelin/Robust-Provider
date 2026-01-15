@@ -56,7 +56,7 @@ impl From<CoreError> for Error {
         match err {
             CoreError::Timeout => Error::Timeout,
             CoreError::RpcError(RpcError::ErrorResp(err_resp))
-                if is_geth_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
+                if is_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
             {
                 Error::BlockNotFound
             }
@@ -426,10 +426,10 @@ impl<N: Network> RobustProvider<N> {
                 .retry(retry_strategy)
                 .when(|e| match e {
                     RpcError::ErrorResp(err_resp) if err_resp.is_retry_err() => true,
-                    // Handle non-existent block on Geth
+                    // Handle non-existent block errors (Geth, Besu, etc.)
                     // TODO: check if this can be omitted once https://github.com/OpenZeppelin/Robust-Provider/issues/12 is implemented
                     RpcError::ErrorResp(err_resp)
-                        if is_geth_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
+                        if is_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
                     {
                         false
                     }
@@ -474,6 +474,16 @@ fn is_geth_block_not_found(code: i64, err_msg: &str) -> bool {
         (-32000, msg) => msg.starts_with("block") && msg.ends_with("not found"),
         _ => false,
     }
+}
+
+fn is_besu_block_not_found(code: i64, err_msg: &str) -> bool {
+    // Besu returns error code -39001 for unknown blocks
+    // https://github.com/hyperledger/besu/blob/main/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java
+    code == -39001 && err_msg == "Unknown block"
+}
+
+fn is_block_not_found(code: i64, err_msg: &str) -> bool {
+    is_geth_block_not_found(code, err_msg) || is_besu_block_not_found(code, err_msg)
 }
 
 #[cfg(test)]
