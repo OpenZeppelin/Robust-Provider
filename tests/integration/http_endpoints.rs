@@ -1,6 +1,6 @@
 //! Integration tests for `RobustProvider` HTTP endpoints against Kurtosis devnet.
 //!
-//! These tests verify that the RobustProvider methods work correctly against
+//! These tests verify that the `RobustProvider` methods work correctly against
 //! real Ethereum execution clients (geth, nethermind, besu, reth) running in Kurtosis.
 //!
 //! Prerequisites:
@@ -31,7 +31,7 @@ macro_rules! ctx {
     };
 }
 
-/// Helper to create a RobustProvider from an endpoint
+/// Helper to create a `RobustProvider` from an endpoint
 async fn setup_robust_provider(
     endpoint: &ElEndpoint,
 ) -> anyhow::Result<(robust_provider::RobustProvider, impl Provider)> {
@@ -235,8 +235,7 @@ async fn test_get_block_succeeds() -> anyhow::Result<()> {
             if is_young_chain &&
                 matches!(
                     block_id,
-                    BlockId::Number(BlockNumberOrTag::Safe) |
-                        BlockId::Number(BlockNumberOrTag::Finalized)
+                    BlockId::Number(BlockNumberOrTag::Safe | BlockNumberOrTag::Finalized)
                 )
             {
                 let result = robust.get_block(block_id).await;
