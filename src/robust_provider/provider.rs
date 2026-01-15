@@ -56,8 +56,7 @@ impl From<CoreError> for Error {
         match err {
             CoreError::Timeout => Error::Timeout,
             CoreError::RpcError(RpcError::ErrorResp(err_resp))
-                if err_resp.code == -32000 &&
-                    is_geth_block_not_found_msg(err_resp.message.as_ref()) =>
+                if is_geth_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
             {
                 Error::BlockNotFound
             }
@@ -429,8 +428,10 @@ impl<N: Network> RobustProvider<N> {
                     RpcError::ErrorResp(err_resp) if err_resp.is_retry_err() => true,
                     // Handle non-existent block on Geth
                     // TODO: check if this can be omitted once https://github.com/OpenZeppelin/Robust-Provider/issues/12 is implemented
-                    RpcError::ErrorResp(err_resp) if err_resp.code == -32000 => {
-                        is_geth_block_not_found_msg(err_resp.message.as_ref())
+                    RpcError::ErrorResp(err_resp)
+                        if is_geth_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
+                    {
+                        false
                     }
                     RpcError::Transport(tr_err) => tr_err.is_retry_err(),
                     RpcError::DeserError { .. } => true,
@@ -449,20 +450,16 @@ impl<N: Network> RobustProvider<N> {
     }
 }
 
-fn is_geth_block_not_found_msg(err_msg: &str) -> bool {
-    match err_msg {
+fn is_geth_block_not_found(code: i64, err_msg: &str) -> bool {
+    match (code, err_msg) {
         // The following errors are thrown by `BlockByNumber`:
         // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
-        "pending block is not available" |
-        "finalized block not found" |
-        "safe block not found" |
+        (-32000, "pending block is not available" | "finalized block not found" | "safe block not found" |
         // The following errors are thrown by `Logs`:
         // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81
         // which is in turn invoked when calling `GetLogs`:
         // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/api.go#L486
-        "earliest header not found" |
-        "finalized header not found" |
-        "safe header not found" |
+        "earliest header not found" | "finalized header not found" | "safe header not found" |
         // The following two errors are thrown by
         // `StateAndHeaderByNumberOrHash`:
         // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L259
@@ -470,10 +467,10 @@ fn is_geth_block_not_found_msg(err_msg: &str) -> bool {
         // Can be thrown if someone calls `get_balance` with a custom block ID,
         // see all possible methods where `StateAndHeaderByNumberOrHash` is
         // used: https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/internal/ethapi/api.go#L321
-        "header not found" |
-        "header for hash not found" => false,
+        "header not found" | "header for hash not found") => true,
         // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133
-        msg => !msg.starts_with("block") || !msg.ends_with("not found"),
+        (-32000, msg) => msg.starts_with("block") && msg.ends_with("not found"),
+        _ => false,
     }
 }
 
