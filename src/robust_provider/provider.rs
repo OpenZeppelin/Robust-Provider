@@ -22,6 +22,16 @@ pub enum Error {
     Timeout,
     #[error("RPC call failed after exhausting all retry attempts: {0}")]
     RpcError(Arc<RpcError<TransportErrorKind>>),
+    /// Returned when a queried block is not available.
+    ///
+    /// This error is returned when the underlying provider returns `None` for the requested
+    /// block, and is also detected for geth-style RPC error responses (e.g. error code `-32000`
+    /// with a "block ... not found"-like message).
+    ///
+    /// Behaviour note: this mapping has been verified on Anvil, Reth, and Geth. Other clients
+    /// and/or networks may use different error codes/messages for missing blocks; in those cases
+    /// the error may surface as [`Error::RpcError`]. Please exercise caution and open an issue if
+    /// you encounter a client where missing blocks are not classified as [`Error::BlockNotFound`].
     #[error("Block not found")]
     BlockNotFound,
 }
@@ -119,7 +129,9 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash was not found on-chain.
+    /// * [`Error::BlockNotFound`] - if the block with the specified number/tag is not available.
+    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+    ///   [`Error::RpcError`].
     pub async fn get_block_by_number(
         &self,
         number: BlockNumberOrTag,
@@ -144,7 +156,9 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash was not found on-chain.
+    /// * [`Error::BlockNotFound`] - if the block for the specified identifier is not available.
+    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+    ///   [`Error::RpcError`].
     pub async fn get_block(&self, id: BlockId) -> Result<N::BlockResponse, Error> {
         let result = self
             .try_operation_with_failover(
@@ -188,7 +202,9 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash was not found on-chain.
+    /// * [`Error::BlockNotFound`] - if the block for the specified identifier is not available.
+    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+    ///   [`Error::RpcError`].
     pub async fn get_block_number_by_id(&self, block_id: BlockId) -> Result<BlockNumber, Error> {
         let result = self
             .try_operation_with_failover(
@@ -231,7 +247,9 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash was not found on-chain.
+    /// * [`Error::BlockNotFound`] - if the block with the specified hash is not available. This is
+    ///   verified on Anvil, Reth, and Geth; other clients may surface this condition as
+    ///   [`Error::RpcError`].
     pub async fn get_block_by_hash(&self, hash: BlockHash) -> Result<N::BlockResponse, Error> {
         let result = self
             .try_operation_with_failover(
