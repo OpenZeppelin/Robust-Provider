@@ -453,16 +453,16 @@ fn is_geth_block_not_found_msg(err_msg: &str) -> bool {
     match err_msg {
         // The following errors are thrown by `BlockByNumber`:
         // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
-        "pending block is not available" => false,
-        "finalized block not found" => false,
-        "safe block not found" => false,
+        "pending block is not available" |
+        "finalized block not found" |
+        "safe block not found" |
         // The following errors are thrown by `Logs`:
         // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81
         // which is in turn invoked when calling `GetLogs`:
         // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/api.go#L486
-        "earliest header not found" => false,
-        "finalized header not found" => false,
-        "safe header not found" => false,
+        "earliest header not found" |
+        "finalized header not found" |
+        "safe header not found" |
         // The following two errors are thrown by
         // `StateAndHeaderByNumberOrHash`:
         // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L259
@@ -470,7 +470,7 @@ fn is_geth_block_not_found_msg(err_msg: &str) -> bool {
         // Can be thrown if someone calls `get_balance` with a custom block ID,
         // see all possible methods where `StateAndHeaderByNumberOrHash` is
         // used: https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/internal/ethapi/api.go#L321
-        "header not found" => false,
+        "header not found" |
         "header for hash not found" => false,
         // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133
         msg => !msg.starts_with("block") || !msg.ends_with("not found"),
