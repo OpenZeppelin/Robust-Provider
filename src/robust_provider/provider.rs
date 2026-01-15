@@ -399,7 +399,10 @@ impl<N: Network> RobustProvider<N> {
 
         timeout(
             self.call_timeout,
-            (|| operation(provider.clone())).retry(retry_strategy).sleep(tokio::time::sleep),
+            (|| operation(provider.clone()))
+                .retry(retry_strategy)
+                .when(is_operation_retriable)
+                .sleep(tokio::time::sleep),
         )
         .await
         .map_err(CoreError::from)?
@@ -409,6 +412,44 @@ impl<N: Network> RobustProvider<N> {
     /// Check if a provider supports pubsub
     fn supports_pubsub(provider: &RootProvider<N>) -> bool {
         provider.client().pubsub_frontend().is_some()
+    }
+}
+
+fn is_operation_retriable(e: &RpcError<TransportErrorKind>) -> bool {
+    match e {
+        RpcError::ErrorResp(err_resp) if err_resp.is_retry_err() => true,
+        // Handle non-existent block on Geth
+        // TODO: check if this can be omitted once https://github.com/OpenZeppelin/Robust-Provider/issues/12 is implemented
+        RpcError::ErrorResp(err_resp) if err_resp.code == -32000 => {
+            match err_resp.message.as_ref() {
+                // The following errors are thrown by `BlockByNumber`:
+                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
+                "pending block is not available" => false,
+                "finalized block not found" => false,
+                "safe block not found" => false,
+                // The following errors are thrown by `Logs`:
+                // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81
+                // which is in turn invoked when calling `GetLogs`:
+                // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/api.go#L486
+                "earliest header not found" => false,
+                "finalized header not found" => false,
+                "safe header not found" => false,
+                // The following two errors are thrown by
+                // `StateAndHeaderByNumberOrHash`:
+                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L259
+                //
+                // Can be thrown if someone calls `get_balance` with a custom block ID,
+                // see all possible methods where `StateAndHeaderByNumberOrHash` is
+                // used: https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/internal/ethapi/api.go#L321
+                "header not found" => false,
+                "header for hash not found" => false,
+                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133
+                msg => !msg.starts_with("block") || !msg.ends_with("not found"),
+            }
+        }
+        RpcError::Transport(tr_err) => tr_err.is_retry_err(),
+        RpcError::DeserError { .. } => true,
+        _ => false,
     }
 }
 
@@ -490,7 +531,8 @@ mod tests {
                     let count = call_count.load(Ordering::SeqCst);
                     match count {
                         3 => Ok(count),
-                        _ => Err(TransportErrorKind::BackendGone.into()),
+                        // retriable error
+                        _ => Err(TransportErrorKind::custom_str("429 Too Many Requests")),
                     }
                 },
                 false,
@@ -510,7 +552,8 @@ mod tests {
             .try_operation_with_failover(
                 |_| async {
                     call_count.fetch_add(1, Ordering::SeqCst);
-                    Err(TransportErrorKind::BackendGone.into())
+                    // retriable error
+                    Err(TransportErrorKind::custom_str("429 Too Many Requests"))
                 },
                 false,
             )
