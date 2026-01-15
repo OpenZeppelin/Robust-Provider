@@ -434,8 +434,7 @@ impl<N: Network> RobustProvider<N> {
                         false
                     }
                     RpcError::Transport(tr_err) => tr_err.is_retry_err(),
-                    RpcError::DeserError { .. } => true,
-                    _ => false,
+                    _ => true,
                 })
                 .sleep(tokio::time::sleep),
         )
