@@ -247,5 +247,3 @@ impl<N: 'static + Clone + Send + Network> From<RobustSubscription<N>>
         Self::new(recv)
     }
 }
-
-// Tests for subscription functionality have been moved to tests/subscription.rs

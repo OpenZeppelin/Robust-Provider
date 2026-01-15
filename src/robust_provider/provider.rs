@@ -22,8 +22,18 @@ pub enum Error {
     Timeout,
     #[error("RPC call failed after exhausting all retry attempts: {0}")]
     RpcError(Arc<RpcError<TransportErrorKind>>),
-    #[error("Block not found, Block Id: {0}")]
-    BlockNotFound(BlockId),
+    /// Returned when a queried block is not available.
+    ///
+    /// This error is returned when the underlying provider returns `None` for the requested
+    /// block, and is also detected for geth-style RPC error responses (e.g. error code `-32000`
+    /// with a "block ... not found"-like message).
+    ///
+    /// Behaviour note: this mapping has been verified on Anvil, Reth, and Geth. Other clients
+    /// and/or networks may use different error codes/messages for missing blocks; in those cases
+    /// the error may surface as [`Error::RpcError`]. Please exercise caution and open an issue if
+    /// you encounter a client where missing blocks are not classified as [`Error::BlockNotFound`].
+    #[error("Block not found")]
+    BlockNotFound,
 }
 
 /// Low-level error related to RPC calls and failover logic.
@@ -45,6 +55,11 @@ impl From<CoreError> for Error {
     fn from(err: CoreError) -> Self {
         match err {
             CoreError::Timeout => Error::Timeout,
+            CoreError::RpcError(RpcError::ErrorResp(err_resp))
+                if is_geth_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
+            {
+                Error::BlockNotFound
+            }
             CoreError::RpcError(e) => Error::RpcError(Arc::new(e)),
         }
     }
@@ -113,7 +128,9 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash was not found on-chain.
+    /// * [`Error::BlockNotFound`] - if the block with the specified number/tag is not available.
+    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+    ///   [`Error::RpcError`].
     pub async fn get_block_by_number(
         &self,
         number: BlockNumberOrTag,
@@ -125,7 +142,7 @@ impl<N: Network> RobustProvider<N> {
             )
             .await;
 
-        result?.ok_or_else(|| Error::BlockNotFound(number.into()))
+        result?.ok_or(Error::BlockNotFound)
     }
 
     /// Fetch a block number by [`BlockId`]  with retry and timeout.
@@ -138,7 +155,9 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash was not found on-chain.
+    /// * [`Error::BlockNotFound`] - if the block for the specified identifier is not available.
+    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+    ///   [`Error::RpcError`].
     pub async fn get_block(&self, id: BlockId) -> Result<N::BlockResponse, Error> {
         let result = self
             .try_operation_with_failover(
@@ -146,7 +165,7 @@ impl<N: Network> RobustProvider<N> {
                 false,
             )
             .await;
-        result?.ok_or_else(|| Error::BlockNotFound(id))
+        result?.ok_or(Error::BlockNotFound)
     }
 
     /// Fetch the latest block number with retry and timeout.
@@ -182,7 +201,9 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash was not found on-chain.
+    /// * [`Error::BlockNotFound`] - if the block for the specified identifier is not available.
+    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+    ///   [`Error::RpcError`].
     pub async fn get_block_number_by_id(&self, block_id: BlockId) -> Result<BlockNumber, Error> {
         let result = self
             .try_operation_with_failover(
@@ -190,7 +211,7 @@ impl<N: Network> RobustProvider<N> {
                 false,
             )
             .await;
-        result?.ok_or_else(|| Error::BlockNotFound(block_id))
+        result?.ok_or(Error::BlockNotFound)
     }
 
     /// Fetch the latest confirmed block number with retry and timeout.
@@ -225,7 +246,9 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash was not found on-chain.
+    /// * [`Error::BlockNotFound`] - if the block with the specified hash is not available. This is
+    ///   verified on Anvil, Reth, and Geth; other clients may surface this condition as
+    ///   [`Error::RpcError`].
     pub async fn get_block_by_hash(&self, hash: BlockHash) -> Result<N::BlockResponse, Error> {
         let result = self
             .try_operation_with_failover(
@@ -234,7 +257,7 @@ impl<N: Network> RobustProvider<N> {
             )
             .await;
 
-        result?.ok_or_else(|| Error::BlockNotFound(hash.into()))
+        result?.ok_or(Error::BlockNotFound)
     }
 
     /// Fetch logs for the given [`Filter`] with retry and timeout.
@@ -399,7 +422,21 @@ impl<N: Network> RobustProvider<N> {
 
         timeout(
             self.call_timeout,
-            (|| operation(provider.clone())).retry(retry_strategy).sleep(tokio::time::sleep),
+            (|| operation(provider.clone()))
+                .retry(retry_strategy)
+                .when(|e| match e {
+                    RpcError::ErrorResp(err_resp) if err_resp.is_retry_err() => true,
+                    // Handle non-existent block on Geth
+                    // TODO: check if this can be omitted once https://github.com/OpenZeppelin/Robust-Provider/issues/12 is implemented
+                    RpcError::ErrorResp(err_resp)
+                        if is_geth_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
+                    {
+                        false
+                    }
+                    RpcError::Transport(tr_err) => tr_err.is_retry_err(),
+                    _ => true,
+                })
+                .sleep(tokio::time::sleep),
         )
         .await
         .map_err(CoreError::from)?
@@ -412,6 +449,33 @@ impl<N: Network> RobustProvider<N> {
     }
 }
 
+fn is_geth_block_not_found(code: i64, err_msg: &str) -> bool {
+    match (code, err_msg) {
+        // default error code:
+        // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/rpc/errors.go#L61
+        (-32000,
+        // The following errors are thrown by `BlockByNumber`:
+        // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
+        "pending block is not available" | "finalized block not found" | "safe block not found" |
+        // The following errors are thrown by `Logs`:
+        // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81
+        // which is in turn invoked when calling `GetLogs`:
+        // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/api.go#L486
+        "earliest header not found" | "finalized header not found" | "safe header not found" |
+        // The following two errors are thrown by
+        // `StateAndHeaderByNumberOrHash`:
+        // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L259
+        //
+        // Can be thrown if someone calls `get_balance` with a custom block ID,
+        // see all possible methods where `StateAndHeaderByNumberOrHash` is
+        // used: https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/internal/ethapi/api.go#L321
+        "header not found" | "header for hash not found") => true,
+        // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133
+        (-32000, msg) => msg.starts_with("block") && msg.ends_with("not found"),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,30 +483,10 @@ mod tests {
         DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, RobustProviderBuilder,
         builder::DEFAULT_SUBSCRIPTION_TIMEOUT, subscription::DEFAULT_RECONNECT_INTERVAL,
     };
-    use alloy::providers::{ProviderBuilder, WsConnect, ext::AnvilApi};
-    use alloy_node_bindings::{Anvil, AnvilInstance};
+    use alloy::providers::{ProviderBuilder, WsConnect};
+    use alloy_node_bindings::Anvil;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::time::sleep;
-
-    async fn setup_anvil() -> anyhow::Result<(AnvilInstance, RobustProvider, impl Provider)> {
-        let anvil = Anvil::new().try_spawn()?;
-        let alloy_provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
-
-        let robust = RobustProviderBuilder::new(alloy_provider.clone())
-            .call_timeout(Duration::from_secs(5))
-            .build()
-            .await?;
-
-        Ok((anvil, robust, alloy_provider))
-    }
-
-    async fn setup_anvil_with_blocks(
-        num_blocks: u64,
-    ) -> anyhow::Result<(AnvilInstance, RobustProvider, impl Provider)> {
-        let (anvil, robust, alloy_provider) = setup_anvil().await?;
-        alloy_provider.anvil_mine(Some(num_blocks), None).await?;
-        Ok((anvil, robust, alloy_provider))
-    }
 
     fn test_provider(timeout: u64, max_retries: usize, min_delay: u64) -> RobustProvider {
         RobustProvider {
@@ -490,7 +534,8 @@ mod tests {
                     let count = call_count.load(Ordering::SeqCst);
                     match count {
                         3 => Ok(count),
-                        _ => Err(TransportErrorKind::BackendGone.into()),
+                        // retriable error
+                        _ => Err(TransportErrorKind::custom_str("429 Too Many Requests")),
                     }
                 },
                 false,
@@ -510,7 +555,8 @@ mod tests {
             .try_operation_with_failover(
                 |_| async {
                     call_count.fetch_add(1, Ordering::SeqCst);
-                    Err(TransportErrorKind::BackendGone.into())
+                    // retriable error
+                    Err(TransportErrorKind::custom_str("429 Too Many Requests"))
                 },
                 false,
             )
@@ -584,223 +630,6 @@ mod tests {
 
         let result = robust.subscribe_blocks().await;
         assert!(result.is_ok());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_by_number_succeeds() -> anyhow::Result<()> {
-        let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
-
-        let tags = [
-            BlockNumberOrTag::Number(50),
-            BlockNumberOrTag::Latest,
-            BlockNumberOrTag::Earliest,
-            BlockNumberOrTag::Safe,
-            BlockNumberOrTag::Finalized,
-        ];
-
-        for tag in tags {
-            let robust_block = robust.get_block_by_number(tag).await?;
-            let alloy_block =
-                alloy_provider.get_block_by_number(tag).await?.expect("block should exist");
-
-            assert_eq!(robust_block.header.number, alloy_block.header.number);
-            assert_eq!(robust_block.header.hash, alloy_block.header.hash);
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_by_number_future_block_fails() -> anyhow::Result<()> {
-        let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
-
-        let future_block = 999_999;
-        let result = robust.get_block_by_number(BlockNumberOrTag::Number(future_block)).await;
-
-        assert!(matches!(result, Err(Error::BlockNotFound(_))));
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_succeeds() -> anyhow::Result<()> {
-        let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
-
-        let block_ids = [
-            BlockId::number(50),
-            BlockId::latest(),
-            BlockId::earliest(),
-            BlockId::safe(),
-            BlockId::finalized(),
-        ];
-
-        for block_id in block_ids {
-            let robust_block = robust.get_block(block_id).await?;
-            let alloy_block =
-                alloy_provider.get_block(block_id).await?.expect("block should exist");
-
-            assert_eq!(robust_block.header.number, alloy_block.header.number);
-            assert_eq!(robust_block.header.hash, alloy_block.header.hash);
-        }
-
-        // test block hash
-        let block = alloy_provider
-            .get_block_by_number(BlockNumberOrTag::Number(50))
-            .await?
-            .expect("block should exist");
-        let block_hash = block.header.hash;
-        let block_id = BlockId::hash(block_hash);
-        let robust_block = robust.get_block(block_id).await?;
-        assert_eq!(robust_block.header.hash, block_hash);
-        assert_eq!(robust_block.header.number, 50);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_fails() -> anyhow::Result<()> {
-        let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
-
-        // Future block number
-        let result = robust.get_block(BlockId::number(999_999)).await;
-        assert!(matches!(result, Err(Error::BlockNotFound(_))));
-
-        // Non-existent hash
-        let result = robust.get_block(BlockId::hash(BlockHash::ZERO)).await;
-        assert!(matches!(result, Err(Error::BlockNotFound(_))));
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_number_succeeds() -> anyhow::Result<()> {
-        let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
-
-        let robust_block_num = robust.get_block_number().await?;
-        let alloy_block_num = alloy_provider.get_block_number().await?;
-        assert_eq!(robust_block_num, alloy_block_num);
-        assert_eq!(robust_block_num, 100);
-
-        alloy_provider.anvil_mine(Some(10), None).await?;
-        let new_block = robust.get_block_number().await?;
-        assert_eq!(new_block, 110);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_number_by_id_succeeds() -> anyhow::Result<()> {
-        let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
-
-        let block_num = robust.get_block_number_by_id(BlockId::number(50)).await?;
-        assert_eq!(block_num, 50);
-
-        let block = alloy_provider
-            .get_block_by_number(BlockNumberOrTag::Number(50))
-            .await?
-            .expect("block should exist");
-        let block_num = robust.get_block_number_by_id(BlockId::hash(block.header.hash)).await?;
-        assert_eq!(block_num, 50);
-
-        let block_num = robust.get_block_number_by_id(BlockId::latest()).await?;
-        assert_eq!(block_num, 100);
-
-        let block_num = robust.get_block_number_by_id(BlockId::earliest()).await?;
-        assert_eq!(block_num, 0);
-
-        // Returns block number even if it doesnt 'exist' on chain
-        let block_num = robust.get_block_number_by_id(BlockId::number(999_999)).await?;
-        let alloy_block_num = alloy_provider
-            .get_block_number_by_id(BlockId::number(999_999))
-            .await?
-            .expect("Should return block num");
-        assert_eq!(alloy_block_num, block_num);
-        assert_eq!(block_num, 999_999);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_number_by_id_fails() -> anyhow::Result<()> {
-        let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
-
-        let result = robust.get_block_number_by_id(BlockId::hash(BlockHash::ZERO)).await;
-        assert!(matches!(result, Err(Error::BlockNotFound(_))));
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_latest_confirmed_succeeds() -> anyhow::Result<()> {
-        let (_anvil, robust, _alloy_provider) = setup_anvil_with_blocks(100).await?;
-
-        // With confirmations
-        let confirmed_block = robust.get_latest_confirmed(10).await?;
-        assert_eq!(confirmed_block, 90);
-
-        // Zero confirmations returns latest
-        let confirmed_block = robust.get_latest_confirmed(0).await?;
-        assert_eq!(confirmed_block, 100);
-
-        // Single confirmation
-        let confirmed_block = robust.get_latest_confirmed(1).await?;
-        assert_eq!(confirmed_block, 99);
-
-        // confirmations = latest - 1
-        let confirmed_block = robust.get_latest_confirmed(99).await?;
-        assert_eq!(confirmed_block, 1);
-
-        // confirmations = latest (should return 0)
-        let confirmed_block = robust.get_latest_confirmed(100).await?;
-        assert_eq!(confirmed_block, 0);
-
-        // confirmations = latest + 1 (saturates at zero)
-        let confirmed_block = robust.get_latest_confirmed(101).await?;
-        assert_eq!(confirmed_block, 0);
-
-        // Saturates at zero when confirmations > latest
-        let confirmed_block = robust.get_latest_confirmed(200).await?;
-        assert_eq!(confirmed_block, 0);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_by_hash_succeeds() -> anyhow::Result<()> {
-        let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
-
-        let block = alloy_provider
-            .get_block_by_number(BlockNumberOrTag::Number(50))
-            .await?
-            .expect("block should exist");
-        let block_hash = block.header.hash;
-
-        let robust_block = robust.get_block_by_hash(block_hash).await?;
-        let alloy_block =
-            alloy_provider.get_block_by_hash(block_hash).await?.expect("block should exist");
-        assert_eq!(robust_block.header.hash, alloy_block.header.hash);
-        assert_eq!(robust_block.header.number, alloy_block.header.number);
-
-        let genesis = alloy_provider
-            .get_block_by_number(BlockNumberOrTag::Earliest)
-            .await?
-            .expect("genesis should exist");
-        let genesis_hash = genesis.header.hash;
-        let robust_block = robust.get_block_by_hash(genesis_hash).await?;
-        assert_eq!(robust_block.header.number, 0);
-        assert_eq!(robust_block.header.hash, genesis_hash);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_get_block_by_hash_fails() -> anyhow::Result<()> {
-        let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
-
-        let result = robust.get_block_by_hash(BlockHash::ZERO).await;
-        assert!(matches!(result, Err(Error::BlockNotFound(_))));
 
         Ok(())
     }
