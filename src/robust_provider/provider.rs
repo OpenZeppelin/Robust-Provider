@@ -452,9 +452,12 @@ impl<N: Network> RobustProvider<N> {
 
 fn is_geth_block_not_found(code: i64, err_msg: &str) -> bool {
     match (code, err_msg) {
+        // default error code:
+        // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/rpc/errors.go#L61
+        (-32000,
         // The following errors are thrown by `BlockByNumber`:
         // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
-        (-32000, "pending block is not available" | "finalized block not found" | "safe block not found" |
+        "pending block is not available" | "finalized block not found" | "safe block not found" |
         // The following errors are thrown by `Logs`:
         // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81
         // which is in turn invoked when calling `GetLogs`:
