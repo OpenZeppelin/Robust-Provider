@@ -1,4 +1,6 @@
-use std::{fmt::Debug, sync::Arc, time::Duration};
+//! Core [`RobustProvider`] implementation with retry and failover logic.
+
+use std::{fmt::Debug, time::Duration};
 
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
@@ -10,90 +12,10 @@ use alloy::{
 };
 use backon::{ExponentialBuilder, Retryable};
 use futures::TryFutureExt;
-use thiserror::Error;
-use tokio::time::{error as TokioError, timeout};
+use tokio::time::timeout;
 
+use super::errors::{CoreError, Error, is_retryable_error};
 use crate::robust_provider::RobustSubscription;
-
-/// Errors that can occur when using [`RobustProvider`].
-#[derive(Error, Debug, Clone)]
-pub enum Error {
-    #[error("Operation timed out")]
-    Timeout,
-    #[error("RPC call failed after exhausting all retry attempts: {0}")]
-    RpcError(Arc<RpcError<TransportErrorKind>>),
-    /// Returned when a queried block is not available.
-    ///
-    /// This error is returned when the underlying provider returns `None` for the requested
-    /// block, and is also detected for geth-style RPC error responses (e.g. error code `-32000`
-    /// with a "block ... not found"-like message).
-    ///
-    /// Behaviour note: this mapping has been verified on Anvil, Reth, and Geth. Other clients
-    /// and/or networks may use different error codes/messages for missing blocks; in those cases
-    /// the error may surface as [`Error::RpcError`]. Please exercise caution and open an issue if
-    /// you encounter a client where missing blocks are not classified as [`Error::BlockNotFound`].
-    #[error("Block not found")]
-    BlockNotFound,
-}
-
-/// Low-level error related to RPC calls and failover logic.
-#[derive(Error, Debug)]
-pub enum CoreError {
-    #[error("Operation timed out")]
-    Timeout,
-    #[error("RPC call failed after exhausting all retry attempts: {0}")]
-    RpcError(RpcError<TransportErrorKind>),
-}
-
-impl From<RpcError<TransportErrorKind>> for CoreError {
-    fn from(err: RpcError<TransportErrorKind>) -> Self {
-        CoreError::RpcError(err)
-    }
-}
-
-impl From<CoreError> for Error {
-    fn from(err: CoreError) -> Self {
-        match err {
-            CoreError::Timeout => Error::Timeout,
-            CoreError::RpcError(RpcError::ErrorResp(err_resp))
-                if is_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
-            {
-                Error::BlockNotFound
-            }
-            CoreError::RpcError(e) => Error::RpcError(Arc::new(e)),
-        }
-    }
-}
-
-impl From<TokioError::Elapsed> for CoreError {
-    fn from(_: TokioError::Elapsed) -> Self {
-        CoreError::Timeout
-    }
-}
-
-impl From<RpcError<TransportErrorKind>> for Error {
-    fn from(err: RpcError<TransportErrorKind>) -> Self {
-        Error::RpcError(Arc::new(err))
-    }
-}
-
-impl From<TokioError::Elapsed> for Error {
-    fn from(_: TokioError::Elapsed) -> Self {
-        Error::Timeout
-    }
-}
-
-impl From<super::subscription::Error> for Error {
-    fn from(err: super::subscription::Error) -> Self {
-        match err {
-            super::subscription::Error::Timeout => Error::Timeout,
-            super::subscription::Error::RpcError(e) => Error::RpcError(e),
-            super::subscription::Error::Closed | super::subscription::Error::Lagged(_) => {
-                Error::Timeout
-            }
-        }
-    }
-}
 
 /// Provider wrapper with built-in retry and timeout mechanisms.
 ///
@@ -425,15 +347,15 @@ impl<N: Network> RobustProvider<N> {
             (|| operation(provider.clone()))
                 .retry(retry_strategy)
                 .when(|e| match e {
+                    // Check if the error is explicitly marked as retryable
                     RpcError::ErrorResp(err_resp) if err_resp.is_retry_err() => true,
-                    // Handle non-existent block errors (Geth, Besu, etc.)
-                    // TODO: check if this can be omitted once https://github.com/OpenZeppelin/Robust-Provider/issues/12 is implemented
-                    RpcError::ErrorResp(err_resp)
-                        if is_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
-                    {
-                        false
+                    // Check our custom non-retryable error classification
+                    RpcError::ErrorResp(err_resp) => {
+                        is_retryable_error(err_resp.code, err_resp.message.as_ref())
                     }
+                    // Transport errors have their own retry logic
                     RpcError::Transport(tr_err) => tr_err.is_retry_err(),
+                    // Default to retrying unknown errors
                     _ => true,
                 })
                 .sleep(tokio::time::sleep),
@@ -447,43 +369,6 @@ impl<N: Network> RobustProvider<N> {
     fn supports_pubsub(provider: &RootProvider<N>) -> bool {
         provider.client().pubsub_frontend().is_some()
     }
-}
-
-fn is_geth_block_not_found(code: i64, err_msg: &str) -> bool {
-    match (code, err_msg) {
-        // default error code:
-        // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/rpc/errors.go#L61
-        (-32000,
-        // The following errors are thrown by `BlockByNumber`:
-        // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
-        "pending block is not available" | "finalized block not found" | "safe block not found" |
-        // The following errors are thrown by `Logs`:
-        // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81
-        // which is in turn invoked when calling `GetLogs`:
-        // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/api.go#L486
-        "earliest header not found" | "finalized header not found" | "safe header not found" |
-        // The following two errors are thrown by
-        // `StateAndHeaderByNumberOrHash`:
-        // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L259
-        //
-        // Can be thrown if someone calls `get_balance` with a custom block ID,
-        // see all possible methods where `StateAndHeaderByNumberOrHash` is
-        // used: https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/internal/ethapi/api.go#L321
-        "header not found" | "header for hash not found") => true,
-        // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133
-        (-32000, msg) => msg.starts_with("block") && msg.ends_with("not found"),
-        _ => false,
-    }
-}
-
-fn is_besu_block_not_found(code: i64, err_msg: &str) -> bool {
-    // Besu returns error code -39001 for unknown blocks
-    // https://github.com/hyperledger/besu/blob/main/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java
-    code == -39001 && err_msg == "Unknown block"
-}
-
-fn is_block_not_found(code: i64, err_msg: &str) -> bool {
-    is_geth_block_not_found(code, err_msg) || is_besu_block_not_found(code, err_msg)
 }
 
 #[cfg(test)]
