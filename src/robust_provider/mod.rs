@@ -15,12 +15,14 @@
 //! * [`IntoRootProvider`] - Convert types into an underlying root provider
 
 pub mod builder;
+pub mod errors;
 pub mod provider;
 pub mod provider_conversion;
 pub mod subscription;
 
 pub use builder::*;
-pub use provider::{Error, RobustProvider};
+pub use errors::{CoreError, Error};
+pub use provider::RobustProvider;
 pub use provider_conversion::{IntoRobustProvider, IntoRootProvider};
 pub use subscription::{
     DEFAULT_RECONNECT_INTERVAL, Error as SubscriptionError, RobustSubscription,
