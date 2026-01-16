@@ -101,9 +101,10 @@ impl From<TokioError::Elapsed> for Error {
 impl From<subscription::Error> for Error {
     fn from(err: subscription::Error) -> Self {
         match err {
-            subscription::Error::Timeout => Error::Timeout,
             subscription::Error::RpcError(e) => Error::RpcError(e),
-            subscription::Error::Closed | subscription::Error::Lagged(_) => Error::Timeout,
+            subscription::Error::Timeout |
+            subscription::Error::Closed |
+            subscription::Error::Lagged(_) => Error::Timeout,
         }
     }
 }
