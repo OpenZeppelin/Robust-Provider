@@ -1,7 +1,7 @@
 //! Error types and RPC error classification for robust provider operations.
 //!
 //! This module provides:
-//! * Public error types ([`Error`], [`CoreError`]) for provider operations
+//! * Public error types ([`enum@Error`], [`CoreError`]) for provider operations
 //! * RPC error classification logic to detect non-retryable errors from various Ethereum clients
 //!
 //! # Error Classification
@@ -48,7 +48,7 @@ pub enum Error {
 /// Low-level error related to RPC calls and failover logic.
 ///
 /// This is an internal error type used during retry/failover operations.
-/// It gets converted to [`Error`] before being returned to users.
+/// It gets converted to [`enum@Error`] before being returned to users.
 #[derive(Error, Debug)]
 pub enum CoreError {
     /// The operation exceeded the configured timeout.
