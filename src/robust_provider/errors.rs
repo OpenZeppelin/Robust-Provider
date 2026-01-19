@@ -8,7 +8,7 @@
 //!
 //! Ethereum clients return various error codes and messages for different failure conditions.
 //! This module classifies these errors to determine whether an error should be retried. In general
-//! failures related to invalid blocks are considered non-retryable
+//! failures related to invalid blocks are considered non-retryable.
 //!
 //! Some clients may use different error codes/messages; errors that don't match known
 //! patterns will surface as [`Error::RpcError`] and will be retried by default.
