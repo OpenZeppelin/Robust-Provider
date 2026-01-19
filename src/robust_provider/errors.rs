@@ -113,9 +113,9 @@ impl From<subscription::Error> for Error {
 ///
 /// Non-retryable errors include:
 /// * Block not found errors
-/// * Invalid block range errors
+/// * Invalid log filter errors
 pub(crate) fn is_retryable_error(code: i64, message: &str) -> bool {
-    let non_retryable = is_block_not_found(code, message) || is_invalid_block_range(code, message);
+    let non_retryable = is_block_not_found(code, message) || is_invalid_log_filter(code, message);
     !non_retryable
 }
 
@@ -124,9 +124,9 @@ pub(crate) fn is_block_not_found(code: i64, message: &str) -> bool {
     geth::is_block_not_found(code, message) || besu::is_block_not_found(code, message)
 }
 
-/// Checks if the error indicates an invalid block range.
-pub(crate) fn is_invalid_block_range(code: i64, message: &str) -> bool {
-    geth::is_invalid_block_range(code, message)
+/// Checks if the error indicates an invalid log filter request.
+pub(crate) fn is_invalid_log_filter(code: i64, message: &str) -> bool {
+    geth::is_invalid_log_filter(code, message)
 }
 
 /// Geth (go-ethereum) specific error detection.
@@ -176,10 +176,10 @@ mod geth {
         }
     }
 
-    /// Checks if the error indicates an invalid block range (Geth).
+    /// Checks if the error indicates an invalid log filter request (Geth).
     ///
-    /// These errors are returned by `eth_getLogs` when the requested block range is invalid
-    /// (e.g., fromBlock > toBlock, or the range extends beyond the current head block).
+    /// These errors are returned by log filter RPC methods (`eth_getLogs`, `eth_newFilter`,
+    /// `eth_getFilterLogs`, etc.) when the filter request is invalid or cannot be processed.
     ///
     /// # Error Messages
     ///
@@ -187,16 +187,31 @@ mod geth {
     ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L39>
     /// * `"block range extends beyond current head block"` - Range includes future blocks
     ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L40>
-    /// * `"can't specify fromBlock/toBlock with blockHash"`  - Used block hash in event filter
+    /// * `"can't specify fromBlock/toBlock with blockHash"` - Used block hash in event filter
     ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L41>
-    pub fn is_invalid_block_range(code: i64, message: &str) -> bool {
+    /// * `"pending logs are not supported"` - Pending logs requested but not available
+    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L42>
+    /// * `"unknown block"` - Referenced block does not exist
+    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L43>
+    /// * `"exceed max topics"` - Too many topics specified in filter
+    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L44>
+    /// * `"exceed max addresses or topics per search position"` - Query limit exceeded
+    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L45>
+    /// * `"filter not found"` - Referenced filter does not exist
+    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L46>
+    pub fn is_invalid_log_filter(code: i64, message: &str) -> bool {
         matches!(
             (code, message),
             (
                 DEFAULT_ERROR_CODE,
                 "invalid block range params" |
                     "block range extends beyond current head block" |
-                    "can't specify fromBlock/toBlock with blockHash",
+                    "can't specify fromBlock/toBlock with blockHash" |
+                    "pending logs are not supported" |
+                    "unknown block" |
+                    "exceed max topics" |
+                    "exceed max addresses or topics per search position" |
+                    "filter not found"
             )
         )
     }
@@ -238,16 +253,28 @@ mod tests {
     }
 
     #[test]
-    fn test_geth_invalid_block_range() {
-        assert!(geth::is_invalid_block_range(-32000, "invalid block range params"));
-        assert!(geth::is_invalid_block_range(
+    fn test_geth_invalid_log_filter() {
+        assert!(geth::is_invalid_log_filter(-32000, "invalid block range params"));
+        assert!(geth::is_invalid_log_filter(
             -32000,
             "block range extends beyond current head block"
         ));
+        assert!(geth::is_invalid_log_filter(
+            -32000,
+            "can't specify fromBlock/toBlock with blockHash"
+        ));
+        assert!(geth::is_invalid_log_filter(-32000, "pending logs are not supported"));
+        assert!(geth::is_invalid_log_filter(-32000, "unknown block"));
+        assert!(geth::is_invalid_log_filter(-32000, "exceed max topics"));
+        assert!(geth::is_invalid_log_filter(
+            -32000,
+            "exceed max addresses or topics per search position"
+        ));
+        assert!(geth::is_invalid_log_filter(-32000, "filter not found"));
 
         // Non-matching
-        assert!(!geth::is_invalid_block_range(-32000, "some other error"));
-        assert!(!geth::is_invalid_block_range(-32001, "invalid block range params"));
+        assert!(!geth::is_invalid_log_filter(-32000, "some other error"));
+        assert!(!geth::is_invalid_log_filter(-32001, "invalid block range params"));
     }
 
     #[test]
@@ -265,6 +292,11 @@ mod tests {
         assert!(!is_retryable_error(-32000, "header not found"));
         assert!(!is_retryable_error(-32000, "invalid block range params"));
         assert!(!is_retryable_error(-39001, "Unknown block"));
+        assert!(!is_retryable_error(-32000, "pending logs are not supported"));
+        assert!(!is_retryable_error(-32000, "unknown block"));
+        assert!(!is_retryable_error(-32000, "exceed max topics"));
+        assert!(!is_retryable_error(-32000, "exceed max addresses or topics per search position"));
+        assert!(!is_retryable_error(-32000, "filter not found"));
 
         // Should retry these (unknown errors)
         assert!(is_retryable_error(-32000, "some transient error"));
