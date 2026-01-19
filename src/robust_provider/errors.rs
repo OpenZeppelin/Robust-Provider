@@ -210,7 +210,7 @@ pub(crate) mod besu {
 
     /// Checks if the error indicates a block was not found.
     pub fn is_block_not_found(code: i64, message: &str) -> bool {
-        matches!((code, message), (UNKNOWN_BLOCK_ERROR_CODE, "Unknown block",))
+        matches!((code, message), (UNKNOWN_BLOCK_ERROR_CODE, "Unknown block"))
     }
 }
 

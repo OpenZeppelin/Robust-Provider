@@ -64,4 +64,9 @@ pub mod macros;
 
 mod robust_provider;
 
-pub use robust_provider::*;
+pub use robust_provider::{
+    CoreError, DEFAULT_CALL_TIMEOUT, DEFAULT_MAX_RETRIES, DEFAULT_MIN_DELAY,
+    DEFAULT_RECONNECT_INTERVAL, DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, DEFAULT_SUBSCRIPTION_TIMEOUT,
+    Error, IntoRobustProvider, IntoRootProvider, RobustProvider, RobustProviderBuilder,
+    RobustSubscription, RobustSubscriptionStream, SubscriptionError,
+};

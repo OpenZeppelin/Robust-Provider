@@ -21,7 +21,7 @@ mod provider_conversion;
 mod subscription;
 
 pub use builder::*;
-pub use errors::Error;
+pub use errors::{CoreError, Error};
 pub use provider::RobustProvider;
 pub use provider_conversion::{IntoRobustProvider, IntoRootProvider};
 pub use subscription::{
