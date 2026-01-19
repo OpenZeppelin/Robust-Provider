@@ -206,10 +206,11 @@ mod geth {
 mod besu {
     /// Error code for unknown blocks.
     ///
-    /// Reference: <https://github.com/hyperledger/besu/blob/main/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java>
+    /// Reference: <https://github.com/hyperledger/besu/blob/1dfd8ed9269ef33fdbda520ef8906c3dc059e713/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java#L126>
     pub const UNKNOWN_BLOCK_ERROR_CODE: i64 = -39001;
 
     /// Checks if the error indicates a block was not found.
+    /// Reference: <https://github.com/hyperledger/besu/blob/1dfd8ed9269ef33fdbda520ef8906c3dc059e713/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java#L126>
     pub fn is_block_not_found(code: i64, message: &str) -> bool {
         matches!((code, message), (UNKNOWN_BLOCK_ERROR_CODE, "Unknown block"))
     }
