@@ -184,10 +184,11 @@ mod geth {
     /// # Error Messages
     ///
     /// * `"invalid block range params"` - Invalid range (e.g., fromBlock > toBlock)
+    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L39>
     /// * `"block range extends beyond current head block"` - Range includes future blocks
+    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L40>
     /// * `"can't specify fromBlock/toBlock with blockHash"`  - Used block hash in event filter
-    ///
-    /// Reference: <https://github.com/ethereum/go-ethereum/blob/master/eth/filters/api.go>
+    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L41>
     pub fn is_invalid_block_range(code: i64, message: &str) -> bool {
         matches!(
             (code, message),
