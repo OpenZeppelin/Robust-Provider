@@ -132,7 +132,7 @@ pub(crate) fn is_invalid_block_range(code: i64, message: &str) -> bool {
 /// Geth (go-ethereum) specific error detection.
 ///
 /// Reference: <https://github.com/ethereum/go-ethereum>
-pub(crate) mod geth {
+mod geth {
     /// Default error code used by Geth for various errors.
     ///
     /// Reference: <https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/rpc/errors.go#L61>
@@ -202,7 +202,7 @@ pub(crate) mod geth {
 }
 
 /// Besu specific error detection.
-pub(crate) mod besu {
+mod besu {
     /// Error code for unknown blocks.
     ///
     /// Reference: <https://github.com/hyperledger/besu/blob/main/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java>
