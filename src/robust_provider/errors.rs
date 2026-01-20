@@ -119,27 +119,21 @@ pub(crate) fn is_retryable_error(code: i64, message: &str) -> bool {
     !non_retryable
 }
 
-/// Checks if the error indicates a block was not found.
 pub(crate) fn is_block_not_found(code: i64, message: &str) -> bool {
     geth::is_block_not_found(code, message) || besu::is_block_not_found(code, message)
 }
 
-/// Checks if the error indicates an invalid log filter request.
 pub(crate) fn is_invalid_log_filter(code: i64, message: &str) -> bool {
     geth::is_invalid_log_filter(code, message)
 }
 
 /// Geth (go-ethereum) specific error detection.
-///
-/// Reference: <https://github.com/ethereum/go-ethereum>
 mod geth {
     /// Default error code used by Geth for various errors.
     ///
     /// Reference: <https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/rpc/errors.go#L61>
     pub const DEFAULT_ERROR_CODE: i64 = -32000;
 
-    /// Checks if the error indicates a block was not found (Geth).
-    ///
     /// # Error Sources
     ///
     /// * `BlockByNumber`: "pending block is not available", "finalized block not found", "safe
@@ -176,8 +170,6 @@ mod geth {
         }
     }
 
-    /// Checks if the error indicates an invalid log filter request (Geth).
-    ///
     /// These errors are returned by log filter RPC methods (`eth_getLogs`, `eth_newFilter`,
     /// `eth_getFilterLogs`, etc.) when the filter request is invalid or cannot be processed.
     ///
@@ -219,12 +211,10 @@ mod geth {
 
 /// Besu specific error detection.
 mod besu {
-    /// Error code for unknown blocks.
-    ///
+
     /// Reference: <https://github.com/hyperledger/besu/blob/1dfd8ed9269ef33fdbda520ef8906c3dc059e713/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java#L126>
     pub const UNKNOWN_BLOCK_ERROR_CODE: i64 = -39001;
 
-    /// Checks if the error indicates a block was not found.
     /// Reference: <https://github.com/hyperledger/besu/blob/1dfd8ed9269ef33fdbda520ef8906c3dc059e713/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java#L126>
     pub fn is_block_not_found(code: i64, message: &str) -> bool {
         matches!((code, message), (UNKNOWN_BLOCK_ERROR_CODE, "Unknown block"))
