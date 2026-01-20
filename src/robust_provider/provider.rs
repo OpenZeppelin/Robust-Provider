@@ -350,6 +350,7 @@ impl<N: Network> RobustProvider<N> {
                     // Check if the error is explicitly marked as retryable
                     RpcError::ErrorResp(err_resp) if err_resp.is_retry_err() => true,
                     // Check our custom non-retryable error classification
+                    // TODO: check if this can be omitted once https://github.com/OpenZeppelin/Robust-Provider/issues/12 is implemented
                     RpcError::ErrorResp(err_resp) => {
                         is_retryable_error(err_resp.code, err_resp.message.as_ref())
                     }
