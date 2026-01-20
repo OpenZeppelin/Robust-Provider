@@ -134,38 +134,35 @@ mod geth {
     pub const DEFAULT_ERROR_CODE: i64 = -32000;
 
     pub fn is_block_not_found(code: i64, message: &str) -> bool {
-        match (code, message) {
-            (
-                DEFAULT_ERROR_CODE,
-                // BlockByNumber
-                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
-                "pending block is not available" |
-                "finalized block not found" |
-                "safe block not found",
-            ) => true,
-            (
-                DEFAULT_ERROR_CODE,
+        if code != DEFAULT_ERROR_CODE {
+            return false;
+        }
+
+        matches!(
+            message,
+            // BlockByNumber
+            // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
+            "pending block is not available"
+                | "finalized block not found"
+                | "safe block not found"
+                |
                 // eth_getLogs and related filter APIs
                 // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81
                 // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/api.go#L486
-                "earliest header not found" |
-                "finalized header not found" |
-                "safe header not found",
-            ) => true,
-            (
-                DEFAULT_ERROR_CODE,
+                "earliest header not found"
+                | "finalized header not found"
+                | "safe header not found"
+                |
                 // StateAndHeaderByNumberOrHash
                 // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L259
                 // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/internal/ethapi/api.go#L321
-                "header not found" | "header for hash not found",
-            ) => true,
-            (DEFAULT_ERROR_CODE, msg) if msg.starts_with("block") && msg.ends_with("not found") => {
-                // Tracer pattern: "block {number} not found"
-                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133
-                true
-            }
-            _ => false,
-        }
+                "header not found"
+                | "header for hash not found"
+        ) || (
+            // Tracer pattern: "block {number} not found"
+            // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133
+            message.starts_with("block") && message.ends_with("not found")
+        )
     }
 
     pub fn is_invalid_log_filter(code: i64, message: &str) -> bool {
