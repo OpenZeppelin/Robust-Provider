@@ -127,75 +127,53 @@ pub(crate) fn is_invalid_log_filter(code: i64, message: &str) -> bool {
     geth::is_invalid_log_filter(code, message)
 }
 
-/// Geth (go-ethereum) specific error detection.
+// Geth (go-ethereum) specific error detection.
 mod geth {
-    /// Default error code used by Geth for various errors.
-    ///
-    /// Reference: <https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/rpc/errors.go#L61>
+    // Default error code used by Geth for various errors.
+    // Reference: <https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/rpc/errors.go#L61>
     pub const DEFAULT_ERROR_CODE: i64 = -32000;
 
-    /// # Error Sources
-    ///
-    /// * `BlockByNumber`: "pending block is not available", "finalized block not found", "safe
-    ///   block not found"
-    ///   - Reference: <https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126>
-    ///
-    /// * `Logs` / `GetLogs`: "earliest header not found", "finalized header not found", "safe
-    ///   header not found"
-    ///   - Reference: <https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81>
-    ///   - Reference: <https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/api.go#L486>
-    ///
-    /// * `StateAndHeaderByNumberOrHash`: "header not found", "header for hash not found"
-    ///   - Reference: <https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L259>
-    ///   - Used by: <https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/internal/ethapi/api.go#L321>
-    ///
-    /// * Tracers: "block {number} not found"
-    ///   - Reference: <https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133>
     pub fn is_block_not_found(code: i64, message: &str) -> bool {
         match (code, message) {
             (
                 DEFAULT_ERROR_CODE,
+                // BlockByNumber
+                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L126
                 "pending block is not available" |
                 "finalized block not found" |
-                "safe block not found" |
+                "safe block not found",
+            ) => true,
+            (
+                DEFAULT_ERROR_CODE,
+                // eth_getLogs and related filter APIs
+                // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/filter.go#L81
+                // https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/eth/filters/api.go#L486
                 "earliest header not found" |
                 "finalized header not found" |
-                "safe header not found" |
-                "header not found" |
-                "header for hash not found",
+                "safe header not found",
             ) => true,
-            // Pattern: "block {number} not found" from tracers
-            (DEFAULT_ERROR_CODE, msg) => msg.starts_with("block") && msg.ends_with("not found"),
+            (
+                DEFAULT_ERROR_CODE,
+                // StateAndHeaderByNumberOrHash
+                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/api_backend.go#L259
+                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/internal/ethapi/api.go#L321
+                "header not found" | "header for hash not found",
+            ) => true,
+            (DEFAULT_ERROR_CODE, msg) if msg.starts_with("block") && msg.ends_with("not found") => {
+                // Tracer pattern: "block {number} not found"
+                // https://github.com/ethereum/go-ethereum/blob/e3e556b266ce0c645002f80195ac786dd5d9f2f8/eth/tracers/api.go#L133
+                true
+            }
             _ => false,
         }
     }
 
-    /// These errors are returned by log filter RPC methods (`eth_getLogs`, `eth_newFilter`,
-    /// `eth_getFilterLogs`, etc.) when the filter request is invalid or cannot be processed.
-    ///
-    /// # Error Messages
-    ///
-    /// * `"invalid block range params"` - Invalid range (e.g., fromBlock > toBlock)
-    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L39>
-    /// * `"block range extends beyond current head block"` - Range includes future blocks
-    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L40>
-    /// * `"can't specify fromBlock/toBlock with blockHash"` - Used block hash in event filter
-    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L41>
-    /// * `"pending logs are not supported"` - Pending logs requested but not available
-    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L42>
-    /// * `"unknown block"` - Referenced block does not exist
-    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L43>
-    /// * `"exceed max topics"` - Too many topics specified in filter
-    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L44>
-    /// * `"exceed max addresses or topics per search position"` - Query limit exceeded
-    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L45>
-    /// * `"filter not found"` - Referenced filter does not exist
-    ///    - Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L46>
     pub fn is_invalid_log_filter(code: i64, message: &str) -> bool {
         matches!(
             (code, message),
             (
                 DEFAULT_ERROR_CODE,
+                // https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L39-L46
                 "invalid block range params" |
                     "block range extends beyond current head block" |
                     "can't specify fromBlock/toBlock with blockHash" |
