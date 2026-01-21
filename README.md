@@ -4,11 +4,6 @@
 
 > Robust, retrying wrapper around Alloy providers.
 
-
-> ⚠️ **WARNING: ACTIVE DEVELOPMENT** ⚠️
->
-> This project is under active development and likely contains bugs. APIs and behaviour may change without notice. Use at your own risk.
-
 ## About
 
 Robust Provider is a Rust library that wraps [Alloy](https://github.com/alloy-rs/alloy) providers with production-ready resilience features. It adds automatic retries, timeouts, and transparent failover between multiple RPC endpoints - making it ideal for applications that need reliable blockchain connectivity.
