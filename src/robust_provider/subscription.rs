@@ -16,7 +16,7 @@ use tokio::{sync::broadcast::error::RecvError, time::timeout};
 use tokio_stream::Stream;
 use tokio_util::sync::ReusableBoxFuture;
 
-use crate::robust_provider::{RobustProvider, provider::CoreError};
+use crate::robust_provider::{RobustProvider, errors::CoreError};
 
 /// Errors that can occur when using [`RobustSubscription`].
 #[derive(Error, Debug, Clone)]
