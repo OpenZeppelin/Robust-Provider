@@ -38,14 +38,14 @@ jobs:
 
       - name: Cache cargo-nextest binary
         id: cache-cargo-nextest
-        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: ~/.cargo/bin/cargo-nextest
           key: ${{ runner.os }}-cargo-nextest-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cargo-nextest
         if: steps.cache-cargo-nextest.outputs.cache-hit != 'true'
-        uses: taiki-e/install-action@90558ad1e179036f31467972b00dec6cb80701fa # v2.66.3
+        uses: taiki-e/install-action@0bc4cd8a3e21db4cb9519857377b0c8c5e150de5 # v2.67.2
         with:
           tool: cargo-nextest
 
