@@ -3,11 +3,9 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat)](https://opensource.org/licenses/MIT)
 
 > Robust, retrying wrapper around Alloy providers.
-
-
-> ⚠️ **WARNING: ACTIVE DEVELOPMENT** ⚠️
 >
-> This project is under active development and likely contains bugs. APIs and behaviour may change without notice. Use at your own risk.
+> _Currently production-ready for supported features. The API surface is still evolving and future feature additions may introduce breaking changes and/or changes in assumptions._
+
 
 ## About
 

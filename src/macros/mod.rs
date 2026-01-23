@@ -1,2 +1,2 @@
 #[macro_use]
-mod logging;
+mod tracing;
