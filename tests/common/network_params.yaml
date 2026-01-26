@@ -1,0 +1,10 @@
+participants:
+  - el_type: geth
+  - el_type: nethermind
+  - el_type: besu
+  - el_type: reth
+    cl_type: lighthouse
+
+network_params:
+  # How long you want the network to wait before starting up
+  genesis_delay: 1

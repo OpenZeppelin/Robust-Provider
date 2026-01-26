@@ -12,13 +12,15 @@ use alloy::{
     providers::{ProviderBuilder, RootProvider, ext::AnvilApi},
 };
 use alloy_node_bindings::Anvil;
-use common::{BUFFER_TIME, RECONNECT_INTERVAL, SHORT_TIMEOUT, spawn_ws_anvil};
+use common::{BUFFER_TIME, RECONNECT_INTERVAL, SHORT_TIMEOUT};
 use robust_provider::{
     DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, RobustProviderBuilder, RobustSubscriptionStream,
     SubscriptionError,
 };
 use tokio::time::sleep;
 use tokio_stream::StreamExt;
+
+use crate::common::setup_anvil::spawn_ws_anvil;
 
 // ============================================================================
 // Test Helpers

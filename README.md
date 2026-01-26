@@ -201,13 +201,46 @@ let robust: RobustProvider<Ethereum> = provider.into().await?;
 
 ## Testing
 
-Run the test suite:
+### Local Tests (Anvil)
+
+Run unit and local integration tests using Anvil instances:
 
 ```bash
-cargo nextest run
+cargo local-test
 ```
 
-The tests use local Anvil instances to verify retry logic, failover behaviour, and subscription resilience.
+These tests verify retry logic, failover behaviour, and subscription resilience against local Anvil instances that are spawned automatically.
+
+### Integration Tests (Kurtosis)
+
+Integration tests run against real Ethereum execution clients (geth, nethermind, besu, reth) in a Kurtosis devnet.
+
+**Prerequisites:**
+- [Docker](https://docs.docker.com/get-docker/)
+- [Kurtosis CLI](https://docs.kurtosis.com/install)
+
+**Setup and run:**
+
+```bash
+# 1. Start the Kurtosis devnet (creates enclave and outputs endpoints)
+./scripts/setup-kurtosis.sh
+
+# 2. Run integration tests
+cargo int-test
+```
+
+The setup script will:
+1. Start the Kurtosis engine if not running
+2. Create a `local-eth-testnet` enclave with multiple EL clients
+3. Write endpoint URLs to `target/kurtosis-endpoints.json`
+
+**Cleanup:**
+
+```bash
+kurtosis enclave rm local-eth-testnet
+```
+
+Advised that you run this before re-spinning up the testnet
 
 ---
 

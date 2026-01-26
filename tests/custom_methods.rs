@@ -3,13 +3,13 @@
 //! These tests cover methods that are unique to `RobustProvider` and not
 //! direct wrappers of standard Ethereum JSON-RPC methods.
 
-mod common;
-
-use common::setup_anvil_with_blocks;
-
 // ============================================================================
 // get_latest_confirmed
 // ============================================================================
+
+use crate::common::setup_anvil::setup_anvil_with_blocks;
+
+mod common;
 
 #[tokio::test]
 async fn test_get_latest_confirmed_succeeds() -> anyhow::Result<()> {
