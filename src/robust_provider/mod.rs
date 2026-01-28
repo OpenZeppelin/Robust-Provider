@@ -18,12 +18,14 @@ mod builder;
 mod errors;
 mod provider;
 mod provider_conversion;
+mod robust;
 mod subscription;
 
 pub use builder::*;
 pub use errors::{CoreError, Error};
 pub use provider::RobustProvider;
 pub use provider_conversion::{IntoRobustProvider, IntoRootProvider};
+pub use robust::Robustness;
 pub use subscription::{
     DEFAULT_RECONNECT_INTERVAL, Error as SubscriptionError, RobustSubscription,
     RobustSubscriptionStream,
