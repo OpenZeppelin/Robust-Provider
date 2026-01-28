@@ -180,6 +180,7 @@ pub trait Robustness<N: Network> {
     }
 
     /// Check if a provider supports pubsub
+    #[must_use]
     fn supports_pubsub(provider: &RootProvider<N>) -> bool {
         provider.client().pubsub_frontend().is_some()
     }
