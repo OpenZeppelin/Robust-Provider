@@ -340,3 +340,38 @@ async fn test_get_fee_history_succeeds() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// eth_gasPrice
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_gas_price_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_gas_price = robust.get_gas_price().await?;
+    let alloy_gas_price = alloy_provider.get_gas_price().await?;
+
+    assert_eq!(robust_gas_price, alloy_gas_price);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getBalance
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_balance_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let address = accounts[0];
+
+    let robust_balance = robust.get_balance(address).await?;
+    let alloy_balance = alloy_provider.get_balance(address).await?;
+
+    assert_eq!(robust_balance, alloy_balance);
+
+    Ok(())
+}

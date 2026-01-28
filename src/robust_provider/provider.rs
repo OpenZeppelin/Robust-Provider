@@ -5,7 +5,7 @@ use std::time::Duration;
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{Address, BlockHash, BlockNumber, Bytes, U64},
+    primitives::{Address, BlockHash, BlockNumber, Bytes, U64, U128, U256},
     providers::{Provider, RootProvider},
     rpc::types::{FeeHistory, Filter, Log},
 };
@@ -186,6 +186,48 @@ impl<N: Network> RobustProvider<N> {
             move |provider| async move {
                 provider.get_fee_history(block_count, last_block, reward_percentiles).await
             },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
+    /// Returns the current gas price in wei.
+    ///
+    /// This is a wrapper function for [`Provider::get_gas_price`] (`eth_gasPrice`).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn get_gas_price(&self) -> Result<U128, Error> {
+        self.try_operation_with_failover(
+            move |provider| async move { provider.get_gas_price().await.map(U128::from) },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
+    /// Returns the balance of the account at the given address.
+    ///
+    /// This is a wrapper function for [`Provider::get_balance`] (`eth_getBalance`).
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The address to get the balance for.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn get_balance(&self, address: Address) -> Result<U256, Error> {
+        self.try_operation_with_failover(
+            move |provider| async move { provider.get_balance(address).await },
             false,
         )
         .await
