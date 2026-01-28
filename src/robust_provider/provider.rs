@@ -5,9 +5,9 @@ use std::time::Duration;
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{Address, BlockHash, BlockNumber, Bytes},
+    primitives::{Address, BlockHash, BlockNumber, Bytes, U64},
     providers::{Provider, RootProvider},
-    rpc::types::{Filter, Log},
+    rpc::types::{FeeHistory, Filter, Log},
 };
 
 use crate::{Error, Robustness, robust_provider::RobustSubscription};
@@ -108,6 +108,83 @@ impl<N: Network> RobustProvider<N> {
             move |provider| {
                 let tx = tx.clone();
                 async move { provider.call(tx).await }
+            },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
+    /// Returns the chain ID of the network.
+    ///
+    /// This is a wrapper function for [`Provider::get_chain_id`] (`eth_chainId`).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn get_chain_id(&self) -> Result<U64, Error> {
+        self.try_operation_with_failover(
+            move |provider| async move { provider.get_chain_id().await.map(U64::from) },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
+    /// Estimates the gas required for a transaction.
+    ///
+    /// This is a wrapper function for [`Provider::estimate_gas`] (`eth_estimateGas`).
+    ///
+    /// # Arguments
+    ///
+    /// * `tx` - The transaction request to estimate gas for.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn estimate_gas(&self, tx: N::TransactionRequest) -> Result<u64, Error> {
+        self.try_operation_with_failover(
+            move |provider| {
+                let tx = tx.clone();
+                async move { provider.estimate_gas(tx).await }
+            },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
+    /// Returns the fee history for a range of blocks.
+    ///
+    /// This is a wrapper function for [`Provider::get_fee_history`] (`eth_feeHistory`).
+    ///
+    /// # Arguments
+    ///
+    /// * `block_count` - The number of blocks to include in the fee history.
+    /// * `last_block` - The last block to include in the fee history.
+    /// * `reward_percentiles` - A list of percentiles to compute reward values for.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn get_fee_history(
+        &self,
+        block_count: u64,
+        last_block: BlockNumberOrTag,
+        reward_percentiles: &[f64],
+    ) -> Result<FeeHistory, Error> {
+        self.try_operation_with_failover(
+            move |provider| async move {
+                provider.get_fee_history(block_count, last_block, reward_percentiles).await
             },
             false,
         )

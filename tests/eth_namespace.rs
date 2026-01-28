@@ -271,9 +271,72 @@ async fn test_call_succeeds() -> anyhow::Result<()> {
     let alloy_result = alloy_provider.call(tx).await?;
 
     let count = U256::from_be_slice(&robust_result);
-    assert_eq!(count, U256::from(3));
+    assert_eq!(count, 3);
 
     assert_eq!(robust_result, alloy_result);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_chainId
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_chain_id_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_chain_id = robust.get_chain_id().await?;
+    let alloy_chain_id = alloy_provider.get_chain_id().await?;
+
+    assert_eq!(robust_chain_id, alloy_chain_id);
+    // Anvil default chain ID is 31337
+    assert_eq!(robust_chain_id, 31337);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_estimateGas
+// ============================================================================
+
+#[tokio::test]
+async fn test_estimate_gas_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let increase_call = counter.increase();
+    let tx = TransactionRequest::default()
+        .with_to(*counter.address())
+        .with_input(increase_call.calldata().clone());
+
+    let robust_gas = robust.estimate_gas(tx.clone()).await?;
+    let alloy_gas = alloy_provider.estimate_gas(tx).await?;
+
+    assert_eq!(robust_gas, alloy_gas);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_feeHistory
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_fee_history_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
+
+    let block_count = 10;
+    let reward_percentiles = [25.0, 50.0, 75.0];
+
+    let robust_fee_history =
+        robust.get_fee_history(block_count, BlockNumberOrTag::Latest, &reward_percentiles).await?;
+    let alloy_fee_history = alloy_provider
+        .get_fee_history(block_count, BlockNumberOrTag::Latest, &reward_percentiles)
+        .await?;
+
+    assert_eq!(robust_fee_history.oldest_block, alloy_fee_history.oldest_block);
+    assert_eq!(robust_fee_history.base_fee_per_gas, alloy_fee_history.base_fee_per_gas);
+    assert_eq!(robust_fee_history.gas_used_ratio, alloy_fee_history.gas_used_ratio);
 
     Ok(())
 }
