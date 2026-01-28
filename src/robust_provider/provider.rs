@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use alloy::{
+    consensus::TrieAccount,
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
     primitives::{Address, BlockHash, BlockNumber, Bytes, U64, U128, U256},
@@ -205,6 +206,30 @@ impl<N: Network> RobustProvider<N> {
     pub async fn get_gas_price(&self) -> Result<U128, Error> {
         self.try_operation_with_failover(
             move |provider| async move { provider.get_gas_price().await.map(U128::from) },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
+    /// Retrieves account information ([`TrieAccount`]) for the given
+    /// [`Address`] at the particular [`BlockId`].
+    ///
+    /// This is a wrapper function for [`Provider::get_account`] (`eth_getAccount`).
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The address to get the account for.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn get_account(&self, address: Address) -> Result<TrieAccount, Error> {
+        self.try_operation_with_failover(
+            move |provider| async move { provider.get_account(address).await },
             false,
         )
         .await

@@ -358,6 +358,28 @@ async fn test_get_gas_price_succeeds() -> anyhow::Result<()> {
 }
 
 // ============================================================================
+// eth_getAccount
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_account_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let address = accounts[0];
+
+    let robust_account = robust.get_account(address).await?;
+    let alloy_account = alloy_provider.get_account(address).await?;
+
+    assert_eq!(robust_account.nonce, alloy_account.nonce);
+    assert_eq!(robust_account.balance, alloy_account.balance);
+    assert_eq!(robust_account.storage_root, alloy_account.storage_root);
+    assert_eq!(robust_account.code_hash, alloy_account.code_hash);
+
+    Ok(())
+}
+
+// ============================================================================
 // eth_getBalance
 // ============================================================================
 
