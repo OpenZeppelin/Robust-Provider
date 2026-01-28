@@ -7,10 +7,12 @@ mod common;
 
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
-    primitives::BlockHash,
+    network::TransactionBuilder,
+    primitives::{BlockHash, U256},
     providers::{Provider, ext::AnvilApi},
+    rpc::types::TransactionRequest,
 };
-use common::{setup_anvil, setup_anvil_with_blocks};
+use common::{setup_anvil, setup_anvil_with_blocks, setup_anvil_with_contract};
 use robust_provider::Error;
 
 // ============================================================================
@@ -244,6 +246,34 @@ async fn test_get_blob_base_fee_succeeds() -> anyhow::Result<()> {
     let alloy_fee = alloy_provider.get_blob_base_fee().await?;
 
     assert_eq!(robust_fee, alloy_fee);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_call
+// ============================================================================
+
+#[tokio::test]
+async fn test_call_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    counter.increase().send().await?.watch().await?;
+    counter.increase().send().await?.watch().await?;
+    counter.increase().send().await?.watch().await?;
+
+    let get_count_call = counter.getCount();
+    let tx = TransactionRequest::default()
+        .with_to(*counter.address())
+        .with_input(get_count_call.calldata().clone());
+
+    let robust_result = robust.call(tx.clone()).await?;
+    let alloy_result = alloy_provider.call(tx).await?;
+
+    let count = U256::from_be_slice(&robust_result);
+    assert_eq!(count, U256::from(3));
+
+    assert_eq!(robust_result, alloy_result);
 
     Ok(())
 }
