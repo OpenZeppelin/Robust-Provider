@@ -70,6 +70,25 @@ impl<N: Network> RobustProvider<N> {
         .map_err(Error::from)
     }
 
+    /// Returns the base fee per blob gas in wei.
+    ///
+    /// This is a wrapper function for [`Provider::get_blob_base_fee`] (`eth_blobBaseFee`).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn get_blob_base_fee(&self) -> Result<u128, Error> {
+        self.try_operation_with_failover(
+            move |provider| async move { provider.get_blob_base_fee().await },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
     /// Fetch a block by [`BlockNumberOrTag`] with retry and timeout.
     ///
     /// This is a wrapper function for [`Provider::get_block_by_number`].

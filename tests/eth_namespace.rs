@@ -231,3 +231,19 @@ async fn test_get_accounts_succeeds() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// eth_blobBaseFee
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_blob_base_fee_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_fee = robust.get_blob_base_fee().await?;
+    let alloy_fee = alloy_provider.get_blob_base_fee().await?;
+
+    assert_eq!(robust_fee, alloy_fee);
+
+    Ok(())
+}
