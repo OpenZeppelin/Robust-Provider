@@ -8,7 +8,7 @@ use alloy::{
     transports::http::reqwest::Url,
 };
 
-use crate::robust_provider::{Error, Resilience, RobustProvider, RobustProviderBuilder};
+use crate::robust_provider::{Error, Robustness, RobustProvider, RobustProviderBuilder};
 
 /// Conversion trait for types that can be turned into an Alloy [`RootProvider`].
 ///

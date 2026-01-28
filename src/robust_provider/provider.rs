@@ -10,7 +10,7 @@ use alloy::{
     rpc::types::{Filter, Log},
 };
 
-use crate::{Error, Resilience, robust_provider::RobustSubscription};
+use crate::{Error, Robustness, robust_provider::RobustSubscription};
 
 /// Provider wrapper with built-in retry and timeout mechanisms.
 ///
@@ -28,7 +28,7 @@ pub struct RobustProvider<N: Network = Ethereum> {
     pub(crate) subscription_buffer_capacity: usize,
 }
 
-impl<N: Network> Resilience<N> for RobustProvider<N> {
+impl<N: Network> Robustness<N> for RobustProvider<N> {
     fn primary(&self) -> &RootProvider<N> {
         &self.primary_provider
     }

@@ -1,4 +1,4 @@
-//! Resilience trait for providers with retry and fallback logic.
+//! Robustness trait for providers with retry and fallback logic.
 
 use std::{fmt::Debug, future::Future, time::Duration};
 
@@ -13,12 +13,12 @@ use tokio::time::timeout;
 
 use super::errors::{CoreError, is_retryable_error};
 
-/// Trait for the robust providers that support resilient operations i.e. ones with retry and
+/// Trait for the robust providers that support robust operations i.e. ones with retry and
 /// failover logic.
 ///
 /// This trait provides methods for executing operations with exponential backoff,
 /// timeouts, and automatic failover to backup providers.
-pub trait Resilience<N: Network> {
+pub trait Robustness<N: Network> {
     /// Get a reference to the primary provider.
     fn primary(&self) -> &RootProvider<N>;
 
@@ -187,24 +187,18 @@ pub trait Resilience<N: Network> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        Error, RobustProvider,
-        robust_provider::{
-            CoreError, DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, RobustProviderBuilder,
-            builder::DEFAULT_SUBSCRIPTION_TIMEOUT, resilience::Resilience,
-            subscription::DEFAULT_RECONNECT_INTERVAL,
-        },
-    };
-    use alloy::{
-        providers::{ProviderBuilder, RootProvider, WsConnect},
-        transports::{RpcError, TransportErrorKind},
-    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use alloy::providers::{ProviderBuilder, WsConnect};
     use alloy_node_bindings::Anvil;
-    use std::{
-        sync::atomic::{AtomicUsize, Ordering},
-        time::Duration,
-    };
     use tokio::time::sleep;
+
+    use crate::{
+        DEFAULT_RECONNECT_INTERVAL, DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY,
+        DEFAULT_SUBSCRIPTION_TIMEOUT, Error, RobustProvider, RobustProviderBuilder,
+    };
+
+    use super::*;
 
     fn test_provider(timeout: u64, max_retries: usize, min_delay: u64) -> RobustProvider {
         RobustProvider {
