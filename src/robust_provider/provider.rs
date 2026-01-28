@@ -6,7 +6,7 @@ use alloy::{
     consensus::TrieAccount,
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{Address, BlockHash, BlockNumber, Bytes, U64, U128, U256},
+    primitives::{Address, BlockHash, BlockNumber, Bytes, U256},
     providers::{Provider, RootProvider},
     rpc::types::{FeeHistory, Filter, Log},
 };
@@ -52,114 +52,83 @@ impl<N: Network> Robustness<N> for RobustProvider<N> {
 }
 
 impl<N: Network> RobustProvider<N> {
-    /// Returns a list of addresses owned by the client.
-    ///
-    /// This is a wrapper function for [`Provider::get_accounts`] (`eth_accounts`).
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_accounts(&self) -> Result<Vec<Address>, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.get_accounts().await },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Returns a list of addresses owned by the client.
+        ///
+        /// This is a wrapper function for [`Provider::get_accounts`] (`eth_accounts`).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_accounts() -> Vec<Address>
+    );
 
-    /// Returns the base fee per blob gas in wei.
-    ///
-    /// This is a wrapper function for [`Provider::get_blob_base_fee`] (`eth_blobBaseFee`).
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_blob_base_fee(&self) -> Result<u128, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.get_blob_base_fee().await },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Returns the base fee per blob gas in wei.
+        ///
+        /// This is a wrapper function for [`Provider::get_blob_base_fee`] (`eth_blobBaseFee`).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_blob_base_fee() -> u128
+    );
 
-    /// Executes a call against the state of the network without creating a transaction.
-    ///
-    /// This is a wrapper function for [`Provider::call`] (`eth_call`).
-    ///
-    /// # Arguments
-    ///
-    /// * `tx` - The transaction request to simulate.
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn call(&self, tx: N::TransactionRequest) -> Result<Bytes, Error> {
-        self.try_operation_with_failover(
-            move |provider| {
-                let tx = tx.clone();
-                async move { provider.call(tx).await }
-            },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Executes a call against the state of the network without creating a transaction.
+        ///
+        /// This is a wrapper function for [`Provider::call`] (`eth_call`).
+        ///
+        /// # Arguments
+        ///
+        /// * `tx` - The transaction request to simulate.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn call(tx: clone N::TransactionRequest) -> Bytes
+    );
 
-    /// Returns the chain ID of the network.
-    ///
-    /// This is a wrapper function for [`Provider::get_chain_id`] (`eth_chainId`).
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_chain_id(&self) -> Result<U64, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.get_chain_id().await.map(U64::from) },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Returns the chain ID of the network.
+        ///
+        /// This is a wrapper function for [`Provider::get_chain_id`] (`eth_chainId`).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_chain_id() -> u64
+    );
 
-    /// Estimates the gas required for a transaction.
-    ///
-    /// This is a wrapper function for [`Provider::estimate_gas`] (`eth_estimateGas`).
-    ///
-    /// # Arguments
-    ///
-    /// * `tx` - The transaction request to estimate gas for.
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn estimate_gas(&self, tx: N::TransactionRequest) -> Result<u64, Error> {
-        self.try_operation_with_failover(
-            move |provider| {
-                let tx = tx.clone();
-                async move { provider.estimate_gas(tx).await }
-            },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Estimates the gas required for a transaction.
+        ///
+        /// This is a wrapper function for [`Provider::estimate_gas`] (`eth_estimateGas`).
+        ///
+        /// # Arguments
+        ///
+        /// * `tx` - The transaction request to estimate gas for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn estimate_gas(tx: clone N::TransactionRequest) -> u64
+    );
 
     /// Returns the fee history for a range of blocks.
     ///
@@ -193,232 +162,156 @@ impl<N: Network> RobustProvider<N> {
         .map_err(Error::from)
     }
 
-    /// Returns the current gas price in wei.
-    ///
-    /// This is a wrapper function for [`Provider::get_gas_price`] (`eth_gasPrice`).
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_gas_price(&self) -> Result<U128, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.get_gas_price().await.map(U128::from) },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Returns the current gas price in wei.
+        ///
+        /// This is a wrapper function for [`Provider::get_gas_price`] (`eth_gasPrice`).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_gas_price() -> u128
+    );
 
-    /// Retrieves account information ([`TrieAccount`]) for the given
-    /// [`Address`] at the particular [`BlockId`].
-    ///
-    /// This is a wrapper function for [`Provider::get_account`] (`eth_getAccount`).
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - The address to get the account for.
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_account(&self, address: Address) -> Result<TrieAccount, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.get_account(address).await },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Retrieves account information ([`TrieAccount`]) for the given
+        /// [`Address`] at the particular [`BlockId`].
+        ///
+        /// This is a wrapper function for [`Provider::get_account`] (`eth_getAccount`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address to get the account for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_account(address: Address) -> TrieAccount
+    );
 
-    /// Returns the balance of the account at the given address.
-    ///
-    /// This is a wrapper function for [`Provider::get_balance`] (`eth_getBalance`).
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - The address to get the balance for.
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_balance(&self, address: Address) -> Result<U256, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.get_balance(address).await },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Returns the balance of the account at the given address.
+        ///
+        /// This is a wrapper function for [`Provider::get_balance`] (`eth_getBalance`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address to get the balance for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_balance(address: Address) -> U256
+    );
 
-    /// Fetch a block by [`BlockNumberOrTag`] with retry and timeout.
-    ///
-    /// This is a wrapper function for [`Provider::get_block_by_number`].
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified number/tag is not available.
-    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
-    ///   [`Error::RpcError`].
-    pub async fn get_block_by_number(
-        &self,
-        number: BlockNumberOrTag,
-    ) -> Result<N::BlockResponse, Error> {
-        let result = self
-            .try_operation_with_failover(
-                move |provider| async move { provider.get_block_by_number(number).await },
-                false,
-            )
-            .await;
+    robust_rpc!(
+        /// Fetch a block by [`BlockNumberOrTag`] with retry and timeout.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_by_number`].
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block with the specified number/tag is not available.
+        ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+        ///   [`Error::RpcError`].
+        fn get_block_by_number(number: BlockNumberOrTag) -> N::BlockResponse; or BlockNotFound
+    );
 
-        result?.ok_or(Error::BlockNotFound)
-    }
+    robust_rpc!(
+        /// Fetch a block number by [`BlockId`]  with retry and timeout.
+        ///
+        /// This is a wrapper function for [`Provider::get_block`].
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block for the specified identifier is not available.
+        ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+        ///   [`Error::RpcError`].
+        fn get_block(id: BlockId) -> N::BlockResponse; or BlockNotFound
+    );
 
-    /// Fetch a block number by [`BlockId`]  with retry and timeout.
-    ///
-    /// This is a wrapper function for [`Provider::get_block`].
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block for the specified identifier is not available.
-    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
-    ///   [`Error::RpcError`].
-    pub async fn get_block(&self, id: BlockId) -> Result<N::BlockResponse, Error> {
-        let result = self
-            .try_operation_with_failover(
-                |provider| async move { provider.get_block(id).await },
-                false,
-            )
-            .await;
-        result?.ok_or(Error::BlockNotFound)
-    }
+    robust_rpc!(
+        /// Fetch the latest block number with retry and timeout.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_number`].
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_block_number() -> BlockNumber
+    );
 
-    /// Fetch the latest block number with retry and timeout.
-    ///
-    /// This is a wrapper function for [`Provider::get_block_number`].
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_block_number(&self) -> Result<BlockNumber, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.get_block_number().await },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Get the block number for a given block identifier.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_number_by_id`].
+        ///
+        /// # Arguments
+        ///
+        /// * `block_id` - The block identifier to fetch the block number for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block for the specified identifier is not available.
+        ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
+        ///   [`Error::RpcError`].
+        fn get_block_number_by_id(block_id: BlockId) -> BlockNumber; or BlockNotFound
+    );
 
-    /// Get the block number for a given block identifier.
-    ///
-    /// This is a wrapper function for [`Provider::get_block_number_by_id`].
-    ///
-    /// # Arguments
-    ///
-    /// * `block_id` - The block identifier to fetch the block number for.
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block for the specified identifier is not available.
-    ///   This is verified on Anvil, Reth, and Geth; other clients may surface this condition as
-    ///   [`Error::RpcError`].
-    pub async fn get_block_number_by_id(&self, block_id: BlockId) -> Result<BlockNumber, Error> {
-        let result = self
-            .try_operation_with_failover(
-                move |provider| async move { provider.get_block_number_by_id(block_id).await },
-                false,
-            )
-            .await;
-        result?.ok_or(Error::BlockNotFound)
-    }
+    robust_rpc!(
+        /// Fetch a block by [`BlockHash`] with retry and timeout.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_by_hash`].
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block with the specified hash is not available. This is
+        ///   verified on Anvil, Reth, and Geth; other clients may surface this condition as
+        ///   [`Error::RpcError`].
+        fn get_block_by_hash(hash: BlockHash) -> N::BlockResponse; or BlockNotFound
+    );
 
-    /// Fetch the latest confirmed block number with retry and timeout.
-    ///
-    /// This method fetches the latest block number and subtracts the specified
-    /// number of confirmations to get a "confirmed" block number.
-    ///
-    /// # Arguments
-    ///
-    /// * `confirmations` - The number of block confirmations to wait for. The returned block number
-    ///   will be `latest_block - confirmations`.
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_latest_confirmed(&self, confirmations: u64) -> Result<u64, Error> {
-        let latest_block = self.get_block_number().await?;
-        let confirmed_block = latest_block.saturating_sub(confirmations);
-        Ok(confirmed_block)
-    }
-
-    /// Fetch a block by [`BlockHash`] with retry and timeout.
-    ///
-    /// This is a wrapper function for [`Provider::get_block_by_hash`].
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    /// * [`Error::BlockNotFound`] - if the block with the specified hash is not available. This is
-    ///   verified on Anvil, Reth, and Geth; other clients may surface this condition as
-    ///   [`Error::RpcError`].
-    pub async fn get_block_by_hash(&self, hash: BlockHash) -> Result<N::BlockResponse, Error> {
-        let result = self
-            .try_operation_with_failover(
-                move |provider| async move { provider.get_block_by_hash(hash).await },
-                false,
-            )
-            .await;
-
-        result?.ok_or(Error::BlockNotFound)
-    }
-
-    /// Fetch logs for the given [`Filter`] with retry and timeout.
-    ///
-    /// This is a wrapper function for [`Provider::get_logs`].
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.get_logs(filter).await },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Fetch logs for the given [`Filter`] with retry and timeout.
+        ///
+        /// This is a wrapper function for [`Provider::get_logs`].
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_logs(filter: &Filter) -> Vec<Log>
+    );
 
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
