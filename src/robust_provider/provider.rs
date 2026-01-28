@@ -1,6 +1,6 @@
 //! Core [`RobustProvider`] implementation with retry and failover logic.
 
-use std::{fmt::Debug, time::Duration};
+use std::time::Duration;
 
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
@@ -8,14 +8,9 @@ use alloy::{
     primitives::{BlockHash, BlockNumber},
     providers::{Provider, RootProvider},
     rpc::types::{Filter, Log},
-    transports::{RpcError, TransportErrorKind},
 };
-use backon::{ExponentialBuilder, Retryable};
-use futures::TryFutureExt;
-use tokio::time::timeout;
 
-use super::errors::{CoreError, Error, is_retryable_error};
-use crate::robust_provider::RobustSubscription;
+use crate::{Error, Resilience, robust_provider::RobustSubscription};
 
 /// Provider wrapper with built-in retry and timeout mechanisms.
 ///
@@ -31,6 +26,28 @@ pub struct RobustProvider<N: Network = Ethereum> {
     pub(crate) min_delay: Duration,
     pub(crate) reconnect_interval: Duration,
     pub(crate) subscription_buffer_capacity: usize,
+}
+
+impl<N: Network> Resilience<N> for RobustProvider<N> {
+    fn primary(&self) -> &RootProvider<N> {
+        &self.primary_provider
+    }
+
+    fn fallback_providers(&self) -> &[RootProvider<N>] {
+        &self.fallback_providers
+    }
+
+    fn call_timeout(&self) -> Duration {
+        self.call_timeout
+    }
+
+    fn max_retries(&self) -> usize {
+        self.max_retries
+    }
+
+    fn min_delay(&self) -> Duration {
+        self.min_delay
+    }
 }
 
 impl<N: Network> RobustProvider<N> {
@@ -231,155 +248,20 @@ impl<N: Network> RobustProvider<N> {
 
         Ok(RobustSubscription::new(subscription, self.clone()))
     }
-
-    /// Execute `operation` with exponential backoff and a total timeout.
-    ///
-    /// Wraps the retry logic with [`tokio::time::timeout`] so
-    /// the entire operation (including time spent inside the RPC call) cannot exceed
-    /// `call_timeout`.
-    ///
-    /// If the timeout is exceeded and fallback providers are available, it will
-    /// attempt to use each fallback provider in sequence.
-    ///
-    /// If `require_pubsub` is true, providers that don't support pubsub will be skipped.
-    ///
-    /// # Errors
-    ///
-    /// * [`CoreError::RpcError`] - if no fallback providers succeeded; contains the last error
-    ///   returned by the last provider attempted on the last retry.
-    /// * [`CoreError::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn try_operation_with_failover<T: Debug, F, Fut>(
-        &self,
-        operation: F,
-        require_pubsub: bool,
-    ) -> Result<T, CoreError>
-    where
-        F: Fn(RootProvider<N>) -> Fut,
-        Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
-    {
-        let primary = self.primary();
-        self.try_provider_with_timeout(primary, &operation)
-            .or_else(|last_error| {
-                self.try_fallback_providers_from(&operation, require_pubsub, last_error, 0)
-                    .map_ok(|(value, _)| value)
-            })
-            .await
-    }
-
-    pub(crate) async fn try_fallback_providers_from<T: Debug, F, Fut>(
-        &self,
-        operation: F,
-        require_pubsub: bool,
-        mut last_error: CoreError,
-        start_index: usize,
-    ) -> Result<(T, usize), CoreError>
-    where
-        F: Fn(RootProvider<N>) -> Fut,
-        Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
-    {
-        let num_fallbacks = self.fallback_providers.len();
-
-        debug!(
-            start_index = start_index,
-            total_fallbacks = num_fallbacks,
-            require_pubsub = require_pubsub,
-            "Primary provider failed, attempting fallback providers"
-        );
-
-        let fallback_providers = self.fallback_providers.iter().enumerate().skip(start_index);
-        for (fallback_idx, provider) in fallback_providers {
-            if require_pubsub && !Self::supports_pubsub(provider) {
-                debug!(
-                    provider_index = fallback_idx,
-                    "Skipping fallback provider: pubsub not supported"
-                );
-                continue;
-            }
-
-            trace!(
-                fallback_index = fallback_idx,
-                total_fallbacks = num_fallbacks,
-                "Attempting fallback provider"
-            );
-
-            match self.try_provider_with_timeout(provider, &operation).await {
-                Ok(value) => {
-                    info!(
-                        fallback_index = fallback_idx,
-                        total_fallbacks = num_fallbacks,
-                        "Switched to fallback provider"
-                    );
-                    return Ok((value, fallback_idx));
-                }
-                Err(e) => {
-                    warn!(
-                        fallback_index = fallback_idx,
-                        error = %e,
-                        "Fallback provider failed"
-                    );
-                    last_error = e;
-                }
-            }
-        }
-
-        error!(attempted_providers = num_fallbacks + 1, "All providers exhausted");
-
-        Err(last_error)
-    }
-
-    /// Try executing an operation with a specific provider with retry and timeout.
-    pub(crate) async fn try_provider_with_timeout<T, F, Fut>(
-        &self,
-        provider: &RootProvider<N>,
-        operation: F,
-    ) -> Result<T, CoreError>
-    where
-        F: Fn(RootProvider<N>) -> Fut,
-        Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
-    {
-        let retry_strategy = ExponentialBuilder::default()
-            .with_max_times(self.max_retries)
-            .with_min_delay(self.min_delay);
-
-        timeout(
-            self.call_timeout,
-            (|| operation(provider.clone()))
-                .retry(retry_strategy)
-                .when(|e| match e {
-                    // Check if the error is explicitly marked as retryable
-                    RpcError::ErrorResp(err_resp) if err_resp.is_retry_err() => true,
-                    // Check our custom non-retryable error classification
-                    // TODO: check if this can be omitted once https://github.com/OpenZeppelin/Robust-Provider/issues/12 is implemented
-                    RpcError::ErrorResp(err_resp) => {
-                        is_retryable_error(err_resp.code, err_resp.message.as_ref())
-                    }
-                    // Transport errors have their own retry logic
-                    RpcError::Transport(tr_err) => tr_err.is_retry_err(),
-                    // Default to retrying unknown errors
-                    _ => true,
-                })
-                .sleep(tokio::time::sleep),
-        )
-        .await
-        .map_err(CoreError::from)?
-        .map_err(CoreError::from)
-    }
-
-    /// Check if a provider supports pubsub
-    fn supports_pubsub(provider: &RootProvider<N>) -> bool {
-        provider.client().pubsub_frontend().is_some()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::robust_provider::{
-        DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, RobustProviderBuilder,
-        builder::DEFAULT_SUBSCRIPTION_TIMEOUT, subscription::DEFAULT_RECONNECT_INTERVAL,
+        CoreError, DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, RobustProviderBuilder,
+        builder::DEFAULT_SUBSCRIPTION_TIMEOUT, resilience::Resilience,
+        subscription::DEFAULT_RECONNECT_INTERVAL,
     };
-    use alloy::providers::{ProviderBuilder, WsConnect};
+    use alloy::{
+        providers::{ProviderBuilder, WsConnect},
+        transports::{RpcError, TransportErrorKind},
+    };
     use alloy_node_bindings::Anvil;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::time::sleep;
