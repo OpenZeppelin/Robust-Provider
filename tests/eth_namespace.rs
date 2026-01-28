@@ -213,3 +213,21 @@ async fn test_get_block_number_by_id_fails() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// eth_accounts
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_accounts_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_accounts = robust.get_accounts().await?;
+    let alloy_accounts = alloy_provider.get_accounts().await?;
+
+    assert_eq!(robust_accounts, alloy_accounts);
+    // Anvil provides 10 default accounts
+    assert_eq!(robust_accounts.len(), 10);
+
+    Ok(())
+}

@@ -5,7 +5,7 @@ use std::time::Duration;
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{BlockHash, BlockNumber},
+    primitives::{Address, BlockHash, BlockNumber},
     providers::{Provider, RootProvider},
     rpc::types::{Filter, Log},
 };
@@ -51,6 +51,25 @@ impl<N: Network> Robustness<N> for RobustProvider<N> {
 }
 
 impl<N: Network> RobustProvider<N> {
+    /// Returns a list of addresses owned by the client.
+    ///
+    /// This is a wrapper function for [`Provider::get_accounts`] (`eth_accounts`).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn get_accounts(&self) -> Result<Vec<Address>, Error> {
+        self.try_operation_with_failover(
+            move |provider| async move { provider.get_accounts().await },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
     /// Fetch a block by [`BlockNumberOrTag`] with retry and timeout.
     ///
     /// This is a wrapper function for [`Provider::get_block_by_number`].
