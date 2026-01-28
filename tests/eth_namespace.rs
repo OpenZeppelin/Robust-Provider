@@ -10,7 +10,7 @@ use alloy::{
     network::TransactionBuilder,
     primitives::{BlockHash, U256},
     providers::{Provider, ext::AnvilApi},
-    rpc::types::TransactionRequest,
+    rpc::types::{Bundle, TransactionRequest},
 };
 use common::{setup_anvil, setup_anvil_with_blocks, setup_anvil_with_contract};
 use robust_provider::Error;
@@ -274,6 +274,35 @@ async fn test_call_succeeds() -> anyhow::Result<()> {
     assert_eq!(count, 3);
 
     assert_eq!(robust_result, alloy_result);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_callMany
+// ============================================================================
+
+#[tokio::test]
+#[ignore = "AFAIK anvil does not support 'call many' therefore this fails with timeout/method not found"]
+async fn test_call_many_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    counter.increase().send().await?.watch().await?;
+    counter.increase().send().await?.watch().await?;
+
+    let get_count_call = counter.getCount();
+    let tx = TransactionRequest::default()
+        .with_to(*counter.address())
+        .with_input(get_count_call.calldata().clone());
+
+    let bundle = Bundle { transactions: vec![tx], block_override: None };
+    let bundles = vec![bundle];
+
+    let robust_result = robust.call_many(&bundles).await?;
+    let alloy_result = alloy_provider.call_many(&bundles).await?;
+
+    assert_eq!(robust_result, alloy_result);
+    assert!(!robust_result.is_empty());
 
     Ok(())
 }

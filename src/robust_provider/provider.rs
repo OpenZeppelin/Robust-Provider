@@ -8,7 +8,7 @@ use alloy::{
     network::{Ethereum, Network},
     primitives::{Address, BlockHash, BlockNumber, Bytes, U256},
     providers::{Provider, RootProvider},
-    rpc::types::{FeeHistory, Filter, Log},
+    rpc::types::{Bundle, EthCallResponse, FeeHistory, Filter, Log},
 };
 
 use crate::{Error, Robustness, robust_provider::RobustSubscription};
@@ -96,6 +96,24 @@ impl<N: Network> RobustProvider<N> {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         fn call(tx: clone N::TransactionRequest) -> Bytes
+    );
+
+    robust_rpc!(
+        /// Executes multiple calls in a single request.
+        ///
+        /// This is a wrapper function for [`Provider::call_many`] (`eth_callMany`).
+        ///
+        /// # Arguments
+        ///
+        /// * `bundles` - A slice of transaction bundles to execute.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn call_many(bundles: &[Bundle]) -> Vec<Vec<EthCallResponse>>
     );
 
     robust_rpc!(
