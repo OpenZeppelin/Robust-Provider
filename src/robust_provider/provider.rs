@@ -5,7 +5,7 @@ use std::time::Duration;
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{Address, BlockHash, BlockNumber},
+    primitives::{Address, BlockHash, BlockNumber, Bytes},
     providers::{Provider, RootProvider},
     rpc::types::{Filter, Log},
 };
@@ -83,6 +83,32 @@ impl<N: Network> RobustProvider<N> {
     pub async fn get_blob_base_fee(&self) -> Result<u128, Error> {
         self.try_operation_with_failover(
             move |provider| async move { provider.get_blob_base_fee().await },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
+    /// Executes a call against the state of the network without creating a transaction.
+    ///
+    /// This is a wrapper function for [`Provider::call`] (`eth_call`).
+    ///
+    /// # Arguments
+    ///
+    /// * `tx` - The transaction request to simulate.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn call(&self, tx: N::TransactionRequest) -> Result<Bytes, Error> {
+        self.try_operation_with_failover(
+            move |provider| {
+                let tx = tx.clone();
+                async move { provider.call(tx).await }
+            },
             false,
         )
         .await
