@@ -51,12 +51,6 @@ impl<N: Network> Resilience<N> for RobustProvider<N> {
 }
 
 impl<N: Network> RobustProvider<N> {
-    /// Get a reference to the primary provider
-    #[must_use]
-    pub fn primary(&self) -> &RootProvider<N> {
-        &self.primary_provider
-    }
-
     /// Fetch a block by [`BlockNumberOrTag`] with retry and timeout.
     ///
     /// This is a wrapper function for [`Provider::get_block_by_number`].
