@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 
 use alloy::{
     network::Ethereum,
+    node_bindings::Anvil,
     providers::{ProviderBuilder, RootProvider, ext::AnvilApi},
 };
-use alloy::node_bindings::Anvil;
 use common::{BUFFER_TIME, RECONNECT_INTERVAL, SHORT_TIMEOUT, spawn_ws_anvil};
 use robust_provider::{
     DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, RobustProviderBuilder, RobustSubscriptionStream,

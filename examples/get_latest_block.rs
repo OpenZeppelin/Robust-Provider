@@ -10,5 +10,5 @@ async fn main() {
         .await
         .expect("Should to build provider");
     let latest_block = provider.get_block_number().await.expect("should fetch latest block number");
-    println!("Latest block: {}", latest_block);
+    println!("Latest block: {latest_block}");
 }
