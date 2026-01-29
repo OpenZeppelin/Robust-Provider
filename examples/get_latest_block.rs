@@ -3,7 +3,7 @@ use robust_provider::RobustProviderBuilder;
 
 const RPC_URL: &str = "https://ethereum-rpc.publicnode.com";
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     let provider = RobustProviderBuilder::<Ethereum, &str>::new(RPC_URL)
         .build()
