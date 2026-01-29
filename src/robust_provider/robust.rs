@@ -190,8 +190,10 @@ pub trait Robustness<N: Network> {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use alloy::providers::{ProviderBuilder, WsConnect};
-    use alloy_node_bindings::Anvil;
+    use alloy::{
+        node_bindings::Anvil,
+        providers::{ProviderBuilder, WsConnect},
+    };
     use tokio::time::sleep;
 
     use crate::{

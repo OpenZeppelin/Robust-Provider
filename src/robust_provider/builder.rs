@@ -167,8 +167,10 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::providers::{ProviderBuilder, WsConnect};
-    use alloy_node_bindings::Anvil;
+    use alloy::{
+        node_bindings::Anvil,
+        providers::{ProviderBuilder, WsConnect},
+    };
 
     #[tokio::test]
     async fn test_builder_primary_type_different_to_fallback() -> anyhow::Result<()> {

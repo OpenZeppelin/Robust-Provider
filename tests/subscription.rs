@@ -11,7 +11,7 @@ use alloy::{
     network::Ethereum,
     providers::{ProviderBuilder, RootProvider, ext::AnvilApi},
 };
-use alloy_node_bindings::Anvil;
+use alloy::node_bindings::Anvil;
 use common::{BUFFER_TIME, RECONNECT_INTERVAL, SHORT_TIMEOUT, spawn_ws_anvil};
 use robust_provider::{
     DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, RobustProviderBuilder, RobustSubscriptionStream,
