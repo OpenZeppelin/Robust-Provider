@@ -13,15 +13,27 @@
 //!
 //! * [`IntoRobustProvider`] - Convert types into a `RobustProvider`
 //! * [`IntoRootProvider`] - Convert types into an underlying root provider
+//!
+//! # Feature Flags
+//!
+//! * `http-subscription` - Enable HTTP-based polling subscriptions for providers without
+//!   native pubsub support
 
 mod builder;
 mod errors;
+#[cfg(feature = "http-subscription")]
+mod http_subscription;
 mod provider;
 mod provider_conversion;
 mod subscription;
 
 pub use builder::*;
 pub use errors::{CoreError, Error};
+#[cfg(feature = "http-subscription")]
+pub use http_subscription::{
+    HttpPollingStream, HttpPollingSubscription, HttpSubscriptionConfig, HttpSubscriptionError,
+    DEFAULT_POLL_INTERVAL,
+};
 pub use provider::RobustProvider;
 pub use provider_conversion::{IntoRobustProvider, IntoRootProvider};
 pub use subscription::{
