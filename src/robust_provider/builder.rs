@@ -146,6 +146,9 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
         let mut fallback_providers = Vec::with_capacity(self.fallback_providers.len());
         for (idx, fallback) in self.fallback_providers.into_iter().enumerate() {
             trace!(fallback_index = idx, "Connecting fallback provider");
+            // ignore unused var warning when tracing disabled
+            _ = idx;
+
             fallback_providers.push(fallback.await?);
         }
 

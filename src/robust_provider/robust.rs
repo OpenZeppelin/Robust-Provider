@@ -85,11 +85,10 @@ pub trait Robustness<N: Network> {
     {
         async move {
             let fallback_providers = self.fallback_providers();
-            let num_fallbacks = fallback_providers.len();
 
             debug!(
                 start_index = start_index,
-                total_fallbacks = num_fallbacks,
+                total_fallbacks = fallback_providers.len(),
                 require_pubsub = require_pubsub,
                 "Primary provider failed, attempting fallback providers"
             );
@@ -106,7 +105,7 @@ pub trait Robustness<N: Network> {
 
                 trace!(
                     fallback_index = fallback_idx,
-                    total_fallbacks = num_fallbacks,
+                    total_fallbacks = fallback_providers.len(),
                     "Attempting fallback provider"
                 );
 
@@ -114,7 +113,7 @@ pub trait Robustness<N: Network> {
                     Ok(value) => {
                         info!(
                             fallback_index = fallback_idx,
-                            total_fallbacks = num_fallbacks,
+                            total_fallbacks = fallback_providers.len(),
                             "Switched to fallback provider"
                         );
                         return Ok((value, fallback_idx));
@@ -130,7 +129,7 @@ pub trait Robustness<N: Network> {
                 }
             }
 
-            error!(attempted_providers = num_fallbacks + 1, "All providers exhausted");
+            error!(attempted_providers = fallback_providers.len() + 1, "All providers exhausted");
 
             Err(last_error)
         }
