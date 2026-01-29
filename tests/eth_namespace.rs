@@ -10,7 +10,7 @@ use alloy::{
     network::TransactionBuilder,
     primitives::{BlockHash, U256},
     providers::{Provider, ext::AnvilApi},
-    rpc::types::{Bundle, TransactionRequest},
+    rpc::types::{Bundle, Filter, Log, TransactionRequest},
 };
 use common::{setup_anvil, setup_anvil_with_blocks, setup_anvil_with_contract};
 use robust_provider::Error;
@@ -593,6 +593,98 @@ async fn test_get_block_transaction_count_by_number_future_block() -> anyhow::Re
         .unwrap_err();
 
     assert!(matches!(result, Error::BlockNotFound));
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getCode
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_code_at_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let contract_address = *counter.address();
+
+    let robust_code = robust.get_code_at(contract_address).await?;
+    let alloy_code = alloy_provider.get_code_at(contract_address).await?;
+
+    assert_eq!(robust_code, alloy_code);
+    assert!(!robust_code.is_empty());
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getFilterLogs
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_filter_logs_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let filter = Filter::new().address(*counter.address());
+
+    let filter_id = alloy_provider.new_filter(&filter).await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let robust_logs = robust.get_filter_logs(filter_id).await?;
+    let alloy_logs = alloy_provider.get_filter_logs(filter_id).await?;
+
+    assert_eq!(robust_logs.len(), alloy_logs.len());
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getFilterChanges
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_filter_changes_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+    let filter = Filter::new().address(*counter.address()).event("CountIncreased(uint256)");
+
+    let robust_filter_id = robust.new_filter(&filter).await?;
+    let alloy_filter_id = alloy_provider.new_filter(&filter).await?;
+
+    let robust_changes: Vec<Log> = robust.get_filter_changes(robust_filter_id).await?;
+    let alloy_changes: Vec<Log> = alloy_provider.get_filter_changes(alloy_filter_id).await?;
+
+    assert!(robust_changes.is_empty());
+    assert!(alloy_changes.is_empty());
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let robust_changes: Vec<Log> = robust.get_filter_changes(robust_filter_id).await?;
+    let alloy_changes: Vec<Log> = alloy_provider.get_filter_changes(alloy_filter_id).await?;
+
+    assert_eq!(robust_changes.len(), 1);
+    assert_eq!(alloy_changes.len(), 1);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_newFilter
+// ============================================================================
+
+#[tokio::test]
+async fn test_new_filter_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let filter = Filter::new().address(*counter.address());
+
+    let robust_filter_id = robust.new_filter(&filter).await?;
+
+    let alloy_filter_id = alloy_provider.new_filter(&filter).await?;
+
+    assert!(robust_filter_id > U256::ZERO);
+    assert!(alloy_filter_id > U256::ZERO);
+
+    alloy_provider.uninstall_filter(alloy_filter_id).await?;
 
     Ok(())
 }

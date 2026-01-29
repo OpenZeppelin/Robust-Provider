@@ -40,13 +40,15 @@ macro_rules! robust_rpc {
     // Main pattern: zero or more args, optional error variant
     (
         $(#[$meta:meta])*
-        fn $method:ident($($($arg:ident: $arg_ty:ty),+ )?) -> $ret:ty $(; or $err:ident)?
+        fn $method:ident $(<$generic:ident: $bound:path>)? ($($($arg:ident: $arg_ty:ty),+)?) -> $ret:ty $(; or $err:ident)?
     ) => {
         $(#[$meta])*
-        pub async fn $method(&self $(, $($arg: $arg_ty),+)?) -> Result<$ret, Error> {
+        pub async fn $method $(<$generic: $bound>)? (&self $(, $($arg: $arg_ty),+)?) -> Result<$ret, Error> {
             let result = self
                 .try_operation_with_failover(
-                    move |provider| async move { provider.$method($($($arg),+)?).await },
+                    move |provider| async move {
+                        provider.$method $(::<$generic>)? ($($($arg),+)?).await
+                    },
                     false,
                 )
                 .await;

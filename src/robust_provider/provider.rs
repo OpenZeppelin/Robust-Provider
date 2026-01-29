@@ -8,7 +8,10 @@ use alloy::{
     network::{Ethereum, Network},
     primitives::{Address, BlockHash, BlockNumber, Bytes, U256},
     providers::{Provider, RootProvider},
-    rpc::types::{Bundle, EthCallResponse, FeeHistory, Filter, FilterChanges, Log},
+    rpc::{
+        json_rpc::RpcRecv,
+        types::{Bundle, EthCallResponse, FeeHistory, Filter, Log},
+    },
 };
 
 use crate::{Error, Robustness, robust_provider::RobustSubscription};
@@ -424,9 +427,23 @@ impl<N: Network> RobustProvider<N> {
         ///
         /// * `filter_id` - The filter ID to get changes for.
         ///
-        /// # Type Parameters
+        /// # Errors
         ///
-        /// * `R` - The type of the filter changes to return. Must implement [`RpcRecv`].
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_filter_changes<R: RpcRecv>(filter_id: U256) -> Vec<R>
+    );
+
+    robust_rpc!(
+        /// Creates a new log filter.
+        ///
+        /// This is a wrapper function for [`Provider::new_filter`] (`eth_newFilter`).
+        ///
+        /// # Arguments
+        ///
+        /// * `filter` - The filter to create.
         ///
         /// # Errors
         ///
@@ -434,7 +451,7 @@ impl<N: Network> RobustProvider<N> {
         ///   by the last provider attempted on the last retry.
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
-        fn get_filter_changes(filter_id: U256) -> Vec<FilterChanges>
+        fn new_filter(filter: &Filter) -> U256
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.

@@ -32,7 +32,7 @@ tracing = { version = "0.1", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0"
-alloy = { version = "1.1.2", features = ["node-bindings", "provider-ws"] }
+alloy = { version = "1.1.2", features = ["node-bindings", "provider-ws", "json-rpc"] }
 
 [package.metadata.docs.rs]
 all-features = true
