@@ -9,6 +9,7 @@ version = "0.2.0"
 categories = [
     "asynchronous",
     "web-programming",
+    "web-programming::websocket",
     "cryptography::cryptocurrencies",
 ]
 keywords = ["evm", "ethereum", "blockchain", "rpc", "alloy"]
