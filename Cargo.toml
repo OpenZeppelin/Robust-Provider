@@ -34,6 +34,9 @@ tracing = { version = "0.1", optional = true }
 anyhow = "1.0"
 alloy = { version = "1.1.2", features = ["node-bindings", "provider-ws"] }
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 tracing = ["dep:tracing"]
 
