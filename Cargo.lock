@@ -2901,7 +2901,6 @@ dependencies = [
  "alloy",
  "anyhow",
  "backon",
- "futures",
  "thiserror",
  "tokio",
  "tokio-stream",

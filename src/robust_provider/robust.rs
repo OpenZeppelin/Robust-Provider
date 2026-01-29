@@ -8,7 +8,6 @@ use alloy::{
     transports::{RpcError, TransportErrorKind},
 };
 use backon::{ExponentialBuilder, Retryable};
-use futures::TryFutureExt;
 use tokio::time::timeout;
 
 use super::errors::{CoreError, is_retryable_error};
@@ -62,12 +61,14 @@ pub trait Robustness<N: Network> {
     {
         async move {
             let primary = self.primary();
-            self.try_provider_with_timeout(primary, &operation)
-                .or_else(|last_error| {
-                    self.try_fallback_providers_from(&operation, require_pubsub, last_error, 0)
-                        .map_ok(|(value, _)| value)
-                })
-                .await
+
+            match self.try_provider_with_timeout(primary, &operation).await {
+                Ok(value) => Ok(value),
+                Err(last_error) => self
+                    .try_fallback_providers_from(&operation, require_pubsub, last_error, 0)
+                    .await
+                    .map(|(value, _)| value),
+            }
         }
     }
 

@@ -20,7 +20,6 @@ all = "warn"
 [dependencies]
 alloy = "1.1.2"
 tokio = "1.48"
-futures = "0.3.31"
 backon = "1.6.0"
 tokio-stream = "0.1.17"
 thiserror = "2.0.17"
