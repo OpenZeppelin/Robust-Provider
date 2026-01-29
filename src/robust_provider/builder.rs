@@ -146,6 +146,9 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
         let mut fallback_providers = Vec::with_capacity(self.fallback_providers.len());
         for (idx, fallback) in self.fallback_providers.into_iter().enumerate() {
             trace!(fallback_index = idx, "Connecting fallback provider");
+            // ignore unused var warning when tracing disabled
+            _ = idx;
+
             fallback_providers.push(fallback.await?);
         }
 
@@ -167,8 +170,10 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::providers::{ProviderBuilder, WsConnect};
-    use alloy_node_bindings::Anvil;
+    use alloy::{
+        node_bindings::Anvil,
+        providers::{ProviderBuilder, WsConnect},
+    };
 
     #[tokio::test]
     async fn test_builder_primary_type_different_to_fallback() -> anyhow::Result<()> {
