@@ -357,9 +357,9 @@ mod tests {
 
         // Should receive block 0 (genesis) on first poll
         let result = tokio::time::timeout(Duration::from_secs(2), sub.recv()).await;
-        assert!(result.is_ok(), "Should receive initial block");
+        assert!(result.is_ok(), "Should receive initial block within timeout");
         let block = result.unwrap()?;
-        assert_eq!(block.number(), 0);
+        assert_eq!(block.number(), 0, "First block should be genesis (block 0)");
 
         Ok(())
     }
@@ -380,8 +380,8 @@ mod tests {
         // Receive genesis block
         let block = tokio::time::timeout(Duration::from_secs(2), sub.recv())
             .await
-            .expect("timeout")
-            .expect("recv error");
+            .expect("timeout waiting for genesis")
+            .expect("recv error on genesis");
         assert_eq!(block.number(), 0);
 
         // Mine a new block
@@ -390,20 +390,114 @@ mod tests {
         // Should receive block 1
         let block = tokio::time::timeout(Duration::from_secs(2), sub.recv())
             .await
-            .expect("timeout")
-            .expect("recv error");
+            .expect("timeout waiting for block 1")
+            .expect("recv error on block 1");
         assert_eq!(block.number(), 1);
 
         Ok(())
     }
 
+    /// Test that polling correctly deduplicates - same block is not emitted twice.
+    /// 
+    /// Verifies by: receiving genesis, waiting for multiple poll cycles (no mining),
+    /// then mining one block and confirming we get block 1 (not duplicates of 0).
     #[tokio::test]
     async fn test_http_polling_deduplication() -> anyhow::Result<()> {
         let anvil = Anvil::new().try_spawn()?;
         let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
 
         let config = HttpSubscriptionConfig {
-            poll_interval: Duration::from_millis(20), // Fast polling
+            poll_interval: Duration::from_millis(20), // Fast polling - 5 polls in 100ms
+            call_timeout: Duration::from_secs(5),
+            buffer_capacity: 16,
+        };
+
+        let mut sub = HttpPollingSubscription::new(provider.clone(), config);
+
+        // Receive genesis
+        let block = sub.recv().await?;
+        assert_eq!(block.number(), 0, "First block should be genesis");
+
+        // Wait for multiple poll cycles without mining - dedup should prevent duplicates
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Channel should be empty (no duplicate genesis blocks queued)
+        assert!(sub.is_empty(), "Should not have duplicate blocks in channel");
+
+        // Now mine a block
+        provider.anvil_mine(Some(1), None).await?;
+
+        // Should receive block 1 next (not another genesis)
+        let block = tokio::time::timeout(Duration::from_secs(1), sub.recv())
+            .await
+            .expect("timeout")
+            .expect("recv error");
+        assert_eq!(block.number(), 1, "Next block should be 1, not duplicate of 0");
+
+        Ok(())
+    }
+
+    /// Test that dropping the subscription stops the background polling task.
+    /// 
+    /// Verification: If task doesn't stop, it would keep polling a dead provider
+    /// and potentially panic or leak resources. Test passes if no hang/panic.
+    #[tokio::test]
+    async fn test_http_polling_stops_on_drop() -> anyhow::Result<()> {
+        let anvil = Anvil::new().try_spawn()?;
+        let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
+
+        let config = HttpSubscriptionConfig {
+            poll_interval: Duration::from_millis(10), // Very fast polling
+            call_timeout: Duration::from_secs(1),
+            buffer_capacity: 4,
+        };
+
+        let sub = HttpPollingSubscription::new(provider, config);
+
+        // Drop the subscription
+        drop(sub);
+
+        // Drop the anvil (provider becomes invalid)
+        drop(anvil);
+
+        // If the background task was still running and polling, it would:
+        // 1. Try to poll a dead provider
+        // 2. Potentially panic or hang
+        // Wait to give any zombie task time to cause problems
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // If we reach here without panic/hang, cleanup worked
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_http_subscription_error_types() {
+        // Test Timeout error
+        let timeout_err = HttpSubscriptionError::Timeout;
+        assert!(matches!(timeout_err, HttpSubscriptionError::Timeout));
+
+        // Test RpcError conversion
+        let rpc_err: RpcError<TransportErrorKind> = TransportErrorKind::custom_str("test error");
+        let sub_err: HttpSubscriptionError = rpc_err.into();
+        assert!(matches!(sub_err, HttpSubscriptionError::RpcError(_)));
+
+        // Test Closed error
+        let closed_err = HttpSubscriptionError::Closed;
+        assert!(matches!(closed_err, HttpSubscriptionError::Closed));
+
+        // Test BlockFetchFailed error
+        let fetch_err = HttpSubscriptionError::BlockFetchFailed("test".to_string());
+        assert!(matches!(fetch_err, HttpSubscriptionError::BlockFetchFailed(_)));
+    }
+
+    /// Test the close() method explicitly closes the subscription
+    #[tokio::test]
+    async fn test_http_polling_close_method() -> anyhow::Result<()> {
+        let anvil = Anvil::new().try_spawn()?;
+        let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
+
+        let config = HttpSubscriptionConfig {
+            poll_interval: Duration::from_millis(50),
             call_timeout: Duration::from_secs(5),
             buffer_capacity: 16,
         };
@@ -411,50 +505,19 @@ mod tests {
         let mut sub = HttpPollingSubscription::new(provider, config);
 
         // Receive genesis
-        let block1 = tokio::time::timeout(Duration::from_secs(2), sub.recv())
-            .await
-            .expect("timeout")
-            .expect("recv error");
+        let _ = sub.recv().await?;
 
-        // Wait a bit - multiple polls should happen but no new block emitted
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Close the subscription
+        sub.close();
 
-        // Channel should be empty (no duplicate genesis blocks)
-        assert!(sub.is_empty(), "Should not have duplicate blocks");
-
-        // Verify we got genesis
-        assert_eq!(block1.number(), 0);
+        // Further recv should return Closed error
+        let result = sub.recv().await;
+        assert!(
+            matches!(result, Err(HttpSubscriptionError::Closed)),
+            "recv after close should return Closed error, got {:?}",
+            result
+        );
 
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_http_polling_handles_drop() -> anyhow::Result<()> {
-        let anvil = Anvil::new().try_spawn()?;
-        let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
-
-        let config = HttpSubscriptionConfig {
-            poll_interval: Duration::from_millis(50),
-            ..Default::default()
-        };
-
-        let sub = HttpPollingSubscription::new(provider, config);
-
-        // Drop the subscription - task should clean up
-        drop(sub);
-
-        // Give the task time to notice and stop
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // If we get here without hanging, the task cleaned up properly
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_http_subscription_error_conversion() {
-        // TransportErrorKind::custom_str returns RpcError<TransportErrorKind>
-        let rpc_err: RpcError<TransportErrorKind> = TransportErrorKind::custom_str("test error");
-        let sub_err: HttpSubscriptionError = rpc_err.into();
-        assert!(matches!(sub_err, HttpSubscriptionError::RpcError(_)));
     }
 }
