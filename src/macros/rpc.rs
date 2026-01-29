@@ -2,7 +2,7 @@
 
 /// Generates a robust RPC method wrapper with retry and failover.
 ///
-/// # Variants
+/// # Macros allows for the following variants
 ///
 /// ## Simple passthrough (no arguments)
 /// ```ignore
@@ -12,7 +12,7 @@
 /// );
 /// ```
 ///
-/// ## Single argument passthrough (Copy types)
+/// ## One or more arguments passthrough (Copy types)
 /// ```ignore
 /// robust_rpc!(
 ///     /// Doc comment
