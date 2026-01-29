@@ -213,6 +213,10 @@ mod tests {
             min_delay: Duration::from_millis(min_delay),
             reconnect_interval: DEFAULT_RECONNECT_INTERVAL,
             subscription_buffer_capacity: DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY,
+            #[cfg(feature = "http-subscription")]
+            poll_interval: crate::DEFAULT_POLL_INTERVAL,
+            #[cfg(feature = "http-subscription")]
+            allow_http_subscriptions: false,
         }
     }
 

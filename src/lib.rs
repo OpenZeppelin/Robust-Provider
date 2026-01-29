@@ -70,3 +70,9 @@ pub use robust_provider::{
     Error, IntoRobustProvider, IntoRootProvider, RobustProvider, RobustProviderBuilder,
     RobustSubscription, RobustSubscriptionStream, Robustness, SubscriptionError,
 };
+
+#[cfg(feature = "http-subscription")]
+pub use robust_provider::{
+    HttpPollingStream, HttpPollingSubscription, HttpSubscriptionConfig, HttpSubscriptionError,
+    DEFAULT_POLL_INTERVAL,
+};

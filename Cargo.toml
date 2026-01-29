@@ -39,6 +39,7 @@ all-features = true
 
 [features]
 tracing = ["dep:tracing"]
+http-subscription = []
 
 [profile.release]
 lto = "thin"
