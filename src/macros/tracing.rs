@@ -6,44 +6,39 @@
 #[allow(unused_macros)]
 macro_rules! error {
     ($($arg:tt)*) => {
-        if cfg!(feature = "tracing") {
-            tracing::error!(target: "robust_provider", $($arg)*)
-        }
+        #[cfg(feature = "tracing")]
+        tracing::error!(target: "robust_provider", $($arg)*)
     };
 }
 
 #[allow(unused_macros)]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        if cfg!(feature = "tracing") {
-            tracing::warn!(target: "robust_provider", $($arg)*)
-        }
+        #[cfg(feature = "tracing")]
+        tracing::warn!(target: "robust_provider", $($arg)*)
     };
 }
 
 #[allow(unused_macros)]
 macro_rules! info {
     ($($arg:tt)*) => {
-        if cfg!(feature = "tracing") {
-            tracing::info!(target: "robust_provider", $($arg)*)
-        }
+        #[cfg(feature = "tracing")]
+        tracing::info!(target: "robust_provider", $($arg)*)
     };
 }
 
 #[allow(unused_macros)]
 macro_rules! debug {
     ($($arg:tt)*) => {
-        if cfg!(feature = "tracing") {
-            tracing::debug!(target: "robust_provider", $($arg)*)
-        }
+        #[cfg(feature = "tracing")]
+        tracing::debug!(target: "robust_provider", $($arg)*)
     };
 }
 
 #[allow(unused_macros)]
 macro_rules! trace {
     ($($arg:tt)*) => {
-        if cfg!(feature = "tracing") {
-            tracing::trace!(target: "robust_provider", $($arg)*)
-        }
+        #[cfg(feature = "tracing")]
+        tracing::trace!(target: "robust_provider", $($arg)*)
     };
 }

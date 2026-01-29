@@ -8,7 +8,6 @@ use alloy::{
     transports::{RpcError, TransportErrorKind},
 };
 use backon::{ExponentialBuilder, Retryable};
-use futures::TryFutureExt;
 use tokio::time::timeout;
 
 use super::errors::{CoreError, is_retryable_error};
@@ -62,12 +61,14 @@ pub trait Robustness<N: Network> {
     {
         async move {
             let primary = self.primary();
-            self.try_provider_with_timeout(primary, &operation)
-                .or_else(|last_error| {
-                    self.try_fallback_providers_from(&operation, require_pubsub, last_error, 0)
-                        .map_ok(|(value, _)| value)
-                })
-                .await
+
+            match self.try_provider_with_timeout(primary, &operation).await {
+                Ok(value) => Ok(value),
+                Err(last_error) => self
+                    .try_fallback_providers_from(&operation, require_pubsub, last_error, 0)
+                    .await
+                    .map(|(value, _)| value),
+            }
         }
     }
 
@@ -85,11 +86,10 @@ pub trait Robustness<N: Network> {
     {
         async move {
             let fallback_providers = self.fallback_providers();
-            let num_fallbacks = fallback_providers.len();
 
             debug!(
                 start_index = start_index,
-                total_fallbacks = num_fallbacks,
+                total_fallbacks = fallback_providers.len(),
                 require_pubsub = require_pubsub,
                 "Primary provider failed, attempting fallback providers"
             );
@@ -106,7 +106,7 @@ pub trait Robustness<N: Network> {
 
                 trace!(
                     fallback_index = fallback_idx,
-                    total_fallbacks = num_fallbacks,
+                    total_fallbacks = fallback_providers.len(),
                     "Attempting fallback provider"
                 );
 
@@ -114,7 +114,7 @@ pub trait Robustness<N: Network> {
                     Ok(value) => {
                         info!(
                             fallback_index = fallback_idx,
-                            total_fallbacks = num_fallbacks,
+                            total_fallbacks = fallback_providers.len(),
                             "Switched to fallback provider"
                         );
                         return Ok((value, fallback_idx));
@@ -130,7 +130,7 @@ pub trait Robustness<N: Network> {
                 }
             }
 
-            error!(attempted_providers = num_fallbacks + 1, "All providers exhausted");
+            error!(attempted_providers = fallback_providers.len() + 1, "All providers exhausted");
 
             Err(last_error)
         }
@@ -190,8 +190,10 @@ pub trait Robustness<N: Network> {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use alloy::providers::{ProviderBuilder, WsConnect};
-    use alloy_node_bindings::Anvil;
+    use alloy::{
+        node_bindings::Anvil,
+        providers::{ProviderBuilder, WsConnect},
+    };
     use tokio::time::sleep;
 
     use crate::{

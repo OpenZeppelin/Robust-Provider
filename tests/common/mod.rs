@@ -6,9 +6,9 @@ use std::time::Duration;
 
 use alloy::{
     network::Ethereum,
+    node_bindings::{Anvil, AnvilInstance},
     providers::{Provider, ProviderBuilder, RootProvider, ext::AnvilApi},
 };
-use alloy_node_bindings::{Anvil, AnvilInstance};
 use robust_provider::{RobustProvider, RobustProviderBuilder};
 
 alloy::sol! {

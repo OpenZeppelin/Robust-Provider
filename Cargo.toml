@@ -9,28 +9,39 @@ version = "0.2.0"
 categories = [
     "asynchronous",
     "web-programming",
+    "web-programming::websocket",
     "cryptography::cryptocurrencies",
 ]
 keywords = ["evm", "ethereum", "blockchain", "rpc", "alloy"]
-
+exclude = [".github/", ".vscode/", ".config/", ".cargo/", "benches/", "tests/"]
+documentation = "https://docs.rs/robust-provider"
 
 [workspace.lints.clippy]
 pedantic = "warn"
 all = "warn"
 
-
 [dependencies]
-alloy = { version = "1.1.2", features = ["full"] }
-alloy-node-bindings = "1.1.2"
-tokio = { version = "1.48", features = ["full"] }
-tracing = "0.1"
-futures = "0.3.31"
+alloy = { version = "1.1.2", features = ["pubsub"] }
+tokio = "1.48"
 backon = "1.6.0"
 tokio-stream = "0.1.17"
 thiserror = "2.0.17"
 tokio-util = "0.7.17"
-anyhow = "1.0"
 
+tracing = { version = "0.1", optional = true }
+
+[dev-dependencies]
+anyhow = "1.0"
+alloy = { version = "1.1.2", features = ["node-bindings", "provider-ws"] }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
-tracing = []
+tracing = ["dep:tracing"]
+
+[profile.release]
+lto = "thin"
+panic = "abort"
+codegen-units = 1
+strip = true
