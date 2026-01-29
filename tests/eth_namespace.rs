@@ -11,7 +11,6 @@ use alloy::{
     primitives::{BlockHash, U256},
     providers::{Provider, ext::AnvilApi},
     rpc::types::{Bundle, TransactionRequest},
-    transports::RpcError,
 };
 use common::{setup_anvil, setup_anvil_with_blocks, setup_anvil_with_contract};
 use robust_provider::Error;
@@ -586,14 +585,14 @@ async fn test_get_block_transaction_count_by_number_succeeds() -> anyhow::Result
 
 #[tokio::test]
 async fn test_get_block_transaction_count_by_number_future_block() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+    let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
 
-    // let result =
-    //     robust.get_block_transaction_count_by_number(BlockNumberOrTag::Number(999_999)).await;
-
-    let alloy_result = alloy_provider
+    let result = robust
         .get_block_transaction_count_by_number(BlockNumberOrTag::Number(999_999))
-        .await;
+        .await
+        .unwrap_err();
+
+    assert!(matches!(result, Error::BlockNotFound));
 
     Ok(())
 }
