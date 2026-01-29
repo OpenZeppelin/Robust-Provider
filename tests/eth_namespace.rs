@@ -283,7 +283,7 @@ async fn test_call_succeeds() -> anyhow::Result<()> {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "AFAIK anvil does not support 'call many' therefore this fails with timeout/method not found"]
+#[ignore = "Anvil does not support 'call many' therefore this fails with timeout/method not found"]
 async fn test_call_many_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
 
