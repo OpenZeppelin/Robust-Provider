@@ -148,37 +148,25 @@ impl<N: Network> RobustProvider<N> {
         fn estimate_gas(tx: clone N::TransactionRequest) -> u64
     );
 
-    /// Returns the fee history for a range of blocks.
-    ///
-    /// This is a wrapper function for [`Provider::get_fee_history`] (`eth_feeHistory`).
-    ///
-    /// # Arguments
-    ///
-    /// * `block_count` - The number of blocks to include in the fee history.
-    /// * `last_block` - The last block to include in the fee history.
-    /// * `reward_percentiles` - A list of percentiles to compute reward values for.
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn get_fee_history(
-        &self,
-        block_count: u64,
-        last_block: BlockNumberOrTag,
-        reward_percentiles: &[f64],
-    ) -> Result<FeeHistory, Error> {
-        self.try_operation_with_failover(
-            move |provider| async move {
-                provider.get_fee_history(block_count, last_block, reward_percentiles).await
-            },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+        /// Returns the fee history for a range of blocks.
+        ///
+        /// This is a wrapper function for [`Provider::get_fee_history`] (`eth_feeHistory`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block_count` - The number of blocks to include in the fee history.
+        /// * `last_block` - The last block to include in the fee history.
+        /// * `reward_percentiles` - A list of percentiles to compute reward values for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_fee_history(block_count: u64, last_block: BlockNumberOrTag, reward_percentiles: &[f64]) -> FeeHistory
+    );
 
     robust_rpc!(
         /// Returns the current gas price in wei.

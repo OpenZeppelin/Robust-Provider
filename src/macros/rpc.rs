@@ -37,39 +37,24 @@
 /// ```
 #[allow(unused_macros)]
 macro_rules! robust_rpc {
-    // No args
+    // Main pattern: zero or more args, optional error variant
     (
         $(#[$meta:meta])*
-        fn $method:ident() -> $ret:ty
+        fn $method:ident($($($arg:ident: $arg_ty:ty),+ $(,)?)?) -> $ret:ty $(; or $err:ident)?
     ) => {
         $(#[$meta])*
-        pub async fn $method(&self) -> Result<$ret, Error> {
-            self.try_operation_with_failover(
-                move |provider| async move { provider.$method().await },
-                false,
-            )
-            .await
-            .map_err(Error::from)
+        pub async fn $method(&self $(, $($arg: $arg_ty),+)?) -> Result<$ret, Error> {
+            let result = self
+                .try_operation_with_failover(
+                    move |provider| async move { provider.$method($($($arg),+)?).await },
+                    false,
+                )
+                .await;
+            robust_rpc!(@unwrap result $(, $err)?)
         }
     };
 
-    // Single Arg (Copy)
-    (
-        $(#[$meta:meta])*
-        fn $method:ident($arg:ident: $arg_ty:ty) -> $ret:ty
-    ) => {
-        $(#[$meta])*
-        pub async fn $method(&self, $arg: $arg_ty) -> Result<$ret, Error> {
-            self.try_operation_with_failover(
-                move |provider| async move { provider.$method($arg).await },
-                false,
-            )
-            .await
-            .map_err(Error::from)
-        }
-    };
-
-    // Single Arg with clone
+    // Single arg with clone (non-Copy types)
     (
         $(#[$meta:meta])*
         fn $method:ident($arg:ident: clone $arg_ty:ty) -> $ret:ty
@@ -88,21 +73,12 @@ macro_rules! robust_rpc {
         }
     };
 
-    // Single Arg, Option return with error on None
-    (
-        $(#[$meta:meta])*
-        fn $method:ident($arg:ident: $arg_ty:ty) -> $ret:ty; or $err:ident
-    ) => {
-        $(#[$meta])*
-        pub async fn $method(&self, $arg: $arg_ty) -> Result<$ret, Error> {
-            let result = self
-                .try_operation_with_failover(
-                    move |provider| async move { provider.$method($arg).await },
-                    false,
-                )
-                .await;
-            result?.ok_or(Error::$err)
-        }
+    // Internal helper for unwrapping
+    (@unwrap $result:expr) => {
+        $result.map_err(Error::from)
     };
 
+    (@unwrap $result:expr, $err:ident) => {
+        $result?.ok_or(Error::$err)
+    };
 }
