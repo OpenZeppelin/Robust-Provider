@@ -12,6 +12,7 @@ categories = [
     "cryptography::cryptocurrencies",
 ]
 keywords = ["evm", "ethereum", "blockchain", "rpc", "alloy"]
+exclude = [".github/", ".vscode/", ".config/", ".cargo/", "benches/", "tests/"]
 
 [workspace.lints.clippy]
 pedantic = "warn"
