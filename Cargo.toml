@@ -14,6 +14,7 @@ categories = [
 ]
 keywords = ["evm", "ethereum", "blockchain", "rpc", "alloy"]
 exclude = [".github/", ".vscode/", ".config/", ".cargo/", "benches/", "tests/"]
+documentation = "https://docs.rs/robust-provider"
 
 [workspace.lints.clippy]
 pedantic = "warn"
