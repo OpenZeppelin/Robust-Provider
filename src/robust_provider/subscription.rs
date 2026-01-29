@@ -78,6 +78,9 @@ impl From<HttpSubscriptionError> for Error {
 /// Default time interval between primary provider reconnection attempts
 pub const DEFAULT_RECONNECT_INTERVAL: Duration = Duration::from_secs(30);
 
+/// Timeout for validating HTTP provider reachability during reconnection
+const HTTP_RECONNECT_VALIDATION_TIMEOUT: Duration = Duration::from_millis(150);
+
 /// Backend for subscriptions - either native WebSocket or HTTP polling.
 ///
 /// This enum allows `RobustSubscription` to transparently handle both
@@ -110,13 +113,20 @@ impl<N: Network> RobustSubscription<N> {
         subscription: Subscription<N::HeaderResponse>,
         robust_provider: RobustProvider<N>,
     ) -> Self {
+        #[cfg(feature = "http-subscription")]
+        let http_config = HttpSubscriptionConfig {
+            poll_interval: robust_provider.poll_interval,
+            call_timeout: robust_provider.call_timeout,
+            buffer_capacity: robust_provider.subscription_buffer_capacity,
+        };
+
         Self {
             backend: SubscriptionBackend::WebSocket(subscription),
             robust_provider,
             last_reconnect_attempt: None,
             current_fallback_index: None,
             #[cfg(feature = "http-subscription")]
-            http_config: HttpSubscriptionConfig::default(),
+            http_config,
         }
     }
 
@@ -245,15 +255,23 @@ impl<N: Network> RobustSubscription<N> {
         // Try HTTP polling if enabled and WebSocket not available/failed
         #[cfg(feature = "http-subscription")]
         if self.robust_provider.allow_http_subscriptions {
-            let http_sub = HttpPollingSubscription::new(
-                primary.clone(),
-                self.http_config.clone(),
-            );
-            info!("Reconnected to primary provider (HTTP polling)");
-            self.backend = SubscriptionBackend::HttpPolling(http_sub);
-            self.current_fallback_index = None;
-            self.last_reconnect_attempt = None;
-            return true;
+            let validation = tokio::time::timeout(
+                HTTP_RECONNECT_VALIDATION_TIMEOUT,
+                primary.get_block_number(),
+            )
+            .await;
+
+            if matches!(validation, Ok(Ok(_))) {
+                let http_sub = HttpPollingSubscription::new(
+                    primary.clone(),
+                    self.http_config.clone(),
+                );
+                info!("Reconnected to primary provider (HTTP polling)");
+                self.backend = SubscriptionBackend::HttpPolling(http_sub);
+                self.current_fallback_index = None;
+                self.last_reconnect_attempt = None;
+                return true;
+            }
         }
 
         self.last_reconnect_attempt = Some(Instant::now());
