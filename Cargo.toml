@@ -34,3 +34,9 @@ alloy = { version = "1.1.2", features = ["node-bindings", "provider-ws"] }
 
 [features]
 tracing = ["dep:tracing"]
+
+[profile.release]
+lto = "thin"
+panic = "abort"
+codegen-units = 1
+strip = true
