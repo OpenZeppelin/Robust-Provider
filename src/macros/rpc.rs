@@ -40,7 +40,7 @@ macro_rules! robust_rpc {
     // Main pattern: zero or more args, optional error variant
     (
         $(#[$meta:meta])*
-        fn $method:ident($($($arg:ident: $arg_ty:ty),+ $(,)?)?) -> $ret:ty $(; or $err:ident)?
+        fn $method:ident($($($arg:ident: $arg_ty:ty),+ )?) -> $ret:ty $(; or $err:ident)?
     ) => {
         $(#[$meta])*
         pub async fn $method(&self $(, $($arg: $arg_ty),+)?) -> Result<$ret, Error> {
