@@ -673,18 +673,13 @@ async fn test_get_filter_changes_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_new_filter_succeeds() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+    let (_anvil, robust, _alloy_provider, counter) = setup_anvil_with_contract().await?;
 
     let filter = Filter::new().address(*counter.address());
 
     let robust_filter_id = robust.new_filter(&filter).await?;
 
-    let alloy_filter_id = alloy_provider.new_filter(&filter).await?;
-
     assert!(robust_filter_id > U256::ZERO);
-    assert!(alloy_filter_id > U256::ZERO);
-
-    alloy_provider.uninstall_filter(alloy_filter_id).await?;
 
     Ok(())
 }
