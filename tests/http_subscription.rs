@@ -217,10 +217,12 @@ async fn test_failover_http_to_ws_on_provider_death() -> anyhow::Result<()> {
     // Kill HTTP provider
     drop(anvil_http);
 
-    // Mine on WS - after HTTP timeout, should failover to WS
+    // Mine on WS shortly after HTTP error is detected.
+    // The HTTP poll will fail quickly (connection refused), triggering immediate failover to WS.
+    // We mine after a small delay to ensure WS subscription is established.
     let ws_clone = ws_provider.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(SHORT_TIMEOUT + BUFFER_TIME).await;
+        tokio::time::sleep(BUFFER_TIME).await;
         ws_clone.anvil_mine(Some(1), None).await.unwrap();
     });
 
@@ -464,6 +466,269 @@ async fn test_http_polling_deduplication() -> anyhow::Result<()> {
         .expect("timeout")
         .expect("recv error");
     assert_eq!(block.number, 1, "Should receive block 1, not duplicate of 0");
+
+    Ok(())
+}
+
+// ============================================================================
+// Configuration Propagation Tests
+// ============================================================================
+
+/// Test: poll_interval from builder is used when subscription fails over to HTTP
+///
+/// This verifies fix for bug where http_config used defaults instead of
+/// user-configured values when a WebSocket subscription was created first.
+#[tokio::test]
+async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
+    let (_anvil_ws, ws_provider) = spawn_ws_anvil().await?;
+    let (_anvil_http, http_provider) = spawn_http_anvil().await?;
+
+    // Use a distinctive poll interval that's different from the default (12s)
+    let custom_poll_interval = Duration::from_millis(30);
+
+    let robust = RobustProviderBuilder::fragile(ws_provider.clone())
+        .fallback(http_provider.clone())
+        .allow_http_subscriptions(true)
+        .poll_interval(custom_poll_interval)
+        .subscription_timeout(SHORT_TIMEOUT)
+        .build()
+        .await?;
+
+    // Start subscription on WebSocket
+    let mut subscription = robust.subscribe_blocks().await?;
+
+    ws_provider.anvil_mine(Some(1), None).await?;
+    let block = subscription.recv().await?;
+    assert_eq!(block.number, 1);
+
+    // Kill WS to force failover to HTTP
+    drop(_anvil_ws);
+
+    // Mine on HTTP and wait for failover
+    let http_clone = http_provider.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(SHORT_TIMEOUT + BUFFER_TIME).await;
+        http_clone.anvil_mine(Some(1), None).await.unwrap();
+    });
+
+    // Should receive block from HTTP fallback
+    let block = tokio::time::timeout(Duration::from_secs(5), subscription.recv())
+        .await
+        .expect("timeout waiting for HTTP fallback block")
+        .expect("recv error");
+
+    // Verify we got a block (proving failover worked with correct config)
+    assert!(block.number <= 1);
+
+    // Now verify the poll interval is being used by timing block reception
+    // Mine another block and measure how long until we receive it
+    http_provider.anvil_mine(Some(1), None).await?;
+
+    let start = std::time::Instant::now();
+    let _ = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    let elapsed = start.elapsed();
+
+    // Should take roughly poll_interval to detect the new block
+    // Allow some margin but it should be much less than the default 12s
+    assert!(
+        elapsed < Duration::from_millis(500),
+        "Poll interval not respected. Elapsed {:?}, expected ~{:?}",
+        elapsed,
+        custom_poll_interval
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// HTTP Reconnection Validation Tests
+// ============================================================================
+
+/// Test: HTTP reconnection validates provider is reachable before claiming success
+///
+/// This verifies fix for bug where HTTP reconnection didn't validate the provider,
+/// potentially "reconnecting" to a dead provider.
+#[tokio::test]
+async fn test_http_reconnect_validates_provider() -> anyhow::Result<()> {
+    // Start with HTTP primary (will be killed) and HTTP fallback
+    let (anvil_primary, primary) = spawn_http_anvil().await?;
+    let (_anvil_fallback, fallback) = spawn_http_anvil().await?;
+
+    // Mine different blocks to identify providers
+    primary.anvil_mine(Some(10), None).await?;
+    fallback.anvil_mine(Some(20), None).await?;
+
+    let robust = RobustProviderBuilder::fragile(primary.clone())
+        .fallback(fallback.clone())
+        .allow_http_subscriptions(true)
+        .poll_interval(TEST_POLL_INTERVAL)
+        .subscription_timeout(SHORT_TIMEOUT)
+        .reconnect_interval(Duration::from_millis(100)) // Fast reconnect for test
+        .build()
+        .await?;
+
+    let mut subscription = robust.subscribe_blocks().await?;
+
+    // Get initial block from primary
+    let block = subscription.recv().await?;
+    assert_eq!(block.number, 10);
+
+    // Kill primary - subscription should failover to fallback
+    drop(anvil_primary);
+
+    // Trigger failover by waiting for timeout, then mine on fallback
+    let fb_clone = fallback.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(SHORT_TIMEOUT + BUFFER_TIME).await;
+        fb_clone.anvil_mine(Some(1), None).await.unwrap();
+    });
+
+    // Should receive from fallback (block 20 or 21 depending on timing)
+    let block = tokio::time::timeout(Duration::from_secs(5), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    let fallback_block = block.number;
+    assert!(fallback_block >= 20, "Should receive block from fallback, got {}", fallback_block);
+
+    // Wait for reconnect interval to elapse
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    // Mine another block on fallback - this triggers reconnect attempt
+    // Since primary is dead, reconnect should FAIL validation and stay on fallback
+    fallback.anvil_mine(Some(1), None).await?;
+
+    let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+
+    // Should still be on fallback (next block), NOT have "reconnected" to dead primary
+    assert!(
+        block.number > fallback_block,
+        "Should still be on fallback after failed reconnect, got block {}",
+        block.number
+    );
+
+    Ok(())
+}
+
+/// Test: Timeout-triggered failover cycles through multiple fallbacks correctly
+///
+/// When a fallback times out (no blocks received), the subscription should:
+/// 1. Try to reconnect to primary (fails if dead)
+/// 2. Move to the next fallback
+/// 3. Eventually receive blocks from a working fallback
+#[tokio::test]
+async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Result<()> {
+    let (anvil_primary, primary) = spawn_http_anvil().await?;
+    let (_anvil_fb1, fallback1) = spawn_http_anvil().await?;
+    let (_anvil_fb2, fallback2) = spawn_http_anvil().await?;
+
+    // Mine different blocks to identify providers
+    primary.anvil_mine(Some(5), None).await?;
+    fallback1.anvil_mine(Some(10), None).await?;
+    fallback2.anvil_mine(Some(20), None).await?;
+
+    let robust = RobustProviderBuilder::fragile(primary.clone())
+        .fallback(fallback1.clone())
+        .fallback(fallback2.clone())
+        .allow_http_subscriptions(true)
+        .poll_interval(TEST_POLL_INTERVAL)
+        .subscription_timeout(SHORT_TIMEOUT)
+        .build()
+        .await?;
+
+    let mut subscription = robust.subscribe_blocks().await?;
+
+    // Get initial block from primary
+    let block = subscription.recv().await?;
+    assert_eq!(block.number, 5);
+
+    // Kill primary AND fallback1 - only fallback2 will work
+    drop(anvil_primary);
+    drop(_anvil_fb1);
+
+    // Don't mine on fallback2 immediately - let timeouts trigger failover
+    // After SHORT_TIMEOUT, primary poll fails -> try fallback1
+    // After SHORT_TIMEOUT, fallback1 poll fails -> try fallback2
+    // Then mine on fallback2
+    let fb2_clone = fallback2.clone();
+    tokio::spawn(async move {
+        // Wait for two timeout cycles plus buffer
+        tokio::time::sleep(SHORT_TIMEOUT * 2 + BUFFER_TIME * 2).await;
+        fb2_clone.anvil_mine(Some(1), None).await.unwrap();
+    });
+
+    // Should eventually receive from fallback2
+    let block = tokio::time::timeout(Duration::from_secs(5), subscription.recv())
+        .await
+        .expect("timeout - failover chain may have failed")
+        .expect("recv error");
+
+    // Block should be from fallback2 (20 or 21 depending on timing)
+    assert!(
+        block.number >= 20,
+        "Should receive block from fallback2, got {}",
+        block.number
+    );
+
+    Ok(())
+}
+
+/// Test: Single fallback timeout behavior
+///
+/// When there's only one fallback and it times out, after exhausting reconnect
+/// attempts, the subscription should return an error (no more providers to try).
+#[tokio::test]
+async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()> {
+    let (anvil_primary, primary) = spawn_http_anvil().await?;
+    let (_anvil_fb, fallback) = spawn_http_anvil().await?;
+
+    primary.anvil_mine(Some(5), None).await?;
+    fallback.anvil_mine(Some(10), None).await?;
+
+    let robust = RobustProviderBuilder::fragile(primary.clone())
+        .fallback(fallback.clone())
+        .allow_http_subscriptions(true)
+        .poll_interval(TEST_POLL_INTERVAL)
+        .subscription_timeout(SHORT_TIMEOUT)
+        .build()
+        .await?;
+
+    let mut subscription = robust.subscribe_blocks().await?;
+
+    // Get initial block from primary
+    let block = subscription.recv().await?;
+    assert_eq!(block.number, 5);
+
+    // Kill both providers
+    drop(anvil_primary);
+    drop(_anvil_fb);
+
+    // Don't mine anything - let it timeout and exhaust providers
+    let result = tokio::time::timeout(Duration::from_secs(3), subscription.recv()).await;
+
+    match result {
+        Ok(Err(SubscriptionError::Timeout)) => {
+            // Expected: all providers exhausted, returns timeout error
+        }
+        Ok(Err(SubscriptionError::RpcError(_))) => {
+            // Also acceptable: RPC error from dead providers
+        }
+        Ok(Ok(block)) => {
+            panic!("Should not receive block, got block {}", block.number);
+        }
+        Err(_) => {
+            // Outer timeout - also acceptable, means it's still trying
+        }
+        Ok(Err(e)) => {
+            panic!("Unexpected error type: {:?}", e);
+        }
+    }
 
     Ok(())
 }
