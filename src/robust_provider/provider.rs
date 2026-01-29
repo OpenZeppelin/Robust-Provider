@@ -306,6 +306,66 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
+        /// Returns all transaction receipts for a given block.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_receipts`] (`eth_getBlockReceipts`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block` - The block identifier (hash, number, or tag).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block receipts for the specified identifier are not
+        ///   available.
+        fn get_block_receipts(block: BlockId) -> Vec<N::ReceiptResponse>; or BlockNotFound
+    );
+
+    robust_rpc!(
+        /// Returns the number of transactions in a block from a block matching the given block hash.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_transaction_count_by_hash`]
+        /// (`eth_getBlockTransactionCountByHash`).
+        ///
+        /// # Arguments
+        ///
+        /// * `hash` - The block hash.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block with the specified hash is not available.
+        fn get_block_transaction_count_by_hash(hash: BlockHash) -> u64; or BlockNotFound
+    );
+
+    robust_rpc!(
+        /// Returns the number of transactions in a block matching the given block number.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_transaction_count_by_number`]
+        /// (`eth_getBlockTransactionCountByNumber`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block_number` - The block number or tag.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block with the specified number is not available.
+        fn get_block_transaction_count_by_number(block_number: BlockNumberOrTag) -> u64; or BlockNotFound
+    );
+
+    robust_rpc!(
         /// Fetch logs for the given [`Filter`] with retry and timeout.
         ///
         /// This is a wrapper function for [`Provider::get_logs`].
