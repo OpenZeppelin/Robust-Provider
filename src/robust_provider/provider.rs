@@ -8,7 +8,10 @@ use alloy::{
     network::{Ethereum, Network},
     primitives::{Address, BlockHash, BlockNumber, Bytes, U256},
     providers::{Provider, RootProvider},
-    rpc::types::{Bundle, EthCallResponse, FeeHistory, Filter, Log},
+    rpc::{
+        json_rpc::RpcRecv,
+        types::{Bundle, EthCallResponse, FeeHistory, Filter, Log},
+    },
 };
 
 use crate::{Error, Robustness, robust_provider::RobustSubscription};
@@ -306,6 +309,66 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
+        /// Returns all transaction receipts for a given block.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_receipts`] (`eth_getBlockReceipts`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block` - The block identifier (hash, number, or tag).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block receipts for the specified identifier are not
+        ///   available.
+        fn get_block_receipts(block: BlockId) -> Vec<N::ReceiptResponse>; or BlockNotFound
+    );
+
+    robust_rpc!(
+        /// Returns the number of transactions in a block from a block matching the given block hash.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_transaction_count_by_hash`]
+        /// (`eth_getBlockTransactionCountByHash`).
+        ///
+        /// # Arguments
+        ///
+        /// * `hash` - The block hash.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block with the specified hash is not available.
+        fn get_block_transaction_count_by_hash(hash: BlockHash) -> u64; or BlockNotFound
+    );
+
+    robust_rpc!(
+        /// Returns the number of transactions in a block matching the given block number.
+        ///
+        /// This is a wrapper function for [`Provider::get_block_transaction_count_by_number`]
+        /// (`eth_getBlockTransactionCountByNumber`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block_number` - The block number or tag.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        /// * [`Error::BlockNotFound`] - if the block with the specified number is not available.
+        fn get_block_transaction_count_by_number(block_number: BlockNumberOrTag) -> u64; or BlockNotFound
+    );
+
+    robust_rpc!(
         /// Fetch logs for the given [`Filter`] with retry and timeout.
         ///
         /// This is a wrapper function for [`Provider::get_logs`].
@@ -317,6 +380,78 @@ impl<N: Network> RobustProvider<N> {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         fn get_logs(filter: &Filter) -> Vec<Log>
+    );
+
+    robust_rpc!(
+        /// Returns the bytecode at the given address.
+        ///
+        /// This is a wrapper function for [`Provider::get_code_at`] (`eth_getCode`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address to get the code for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_code_at(address: Address) -> Bytes
+    );
+
+    robust_rpc!(
+        /// Returns an array of all logs matching the filter with the given filter id.
+        ///
+        /// This is a wrapper function for [`Provider::get_filter_logs`] (`eth_getFilterLogs`).
+        ///
+        /// # Arguments
+        ///
+        /// * `filter_id` - The filter ID to fetch logs for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_filter_logs(filter_id: U256) -> Vec<Log>
+    );
+
+    robust_rpc!(
+        /// Returns an array of all changes matching the filter with the given filter id.
+        ///
+        /// This is a wrapper function for [`Provider::get_filter_changes`] (`eth_getFilterChanges`).
+        ///
+        /// # Arguments
+        ///
+        /// * `filter_id` - The filter ID to get changes for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_filter_changes<R: RpcRecv>(filter_id: U256) -> Vec<R>
+    );
+
+    robust_rpc!(
+        /// Creates a new log filter.
+        ///
+        /// This is a wrapper function for [`Provider::new_filter`] (`eth_newFilter`).
+        ///
+        /// # Arguments
+        ///
+        /// * `filter` - The filter to create.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn new_filter(filter: &Filter) -> U256
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.

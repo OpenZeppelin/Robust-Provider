@@ -21,7 +21,7 @@ pedantic = "warn"
 all = "warn"
 
 [dependencies]
-alloy = { version = "1.1.2", features = ["pubsub"] }
+alloy = { version = "1.1.2", features = ["pubsub", "json-rpc"] }
 tokio = "1.48"
 backon = "1.6.0"
 tokio-stream = "0.1.17"

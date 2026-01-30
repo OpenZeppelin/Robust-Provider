@@ -10,7 +10,7 @@ use alloy::{
     network::TransactionBuilder,
     primitives::{BlockHash, U256},
     providers::{Provider, ext::AnvilApi},
-    rpc::types::{Bundle, TransactionRequest},
+    rpc::types::{Bundle, Filter, Log, TransactionRequest},
 };
 use common::{setup_anvil, setup_anvil_with_blocks, setup_anvil_with_contract};
 use robust_provider::Error;
@@ -423,6 +423,263 @@ async fn test_get_balance_succeeds() -> anyhow::Result<()> {
     let alloy_balance = alloy_provider.get_balance(address).await?;
 
     assert_eq!(robust_balance, alloy_balance);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getBlockReceipts
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_block_receipts_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+
+    let robust_receipts = robust.get_block_receipts(BlockId::number(block_number)).await?;
+    let alloy_receipts = alloy_provider
+        .get_block_receipts(BlockId::number(block_number))
+        .await?
+        .expect("receipts should exist");
+
+    assert_eq!(robust_receipts.len(), alloy_receipts.len());
+
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    let robust_receipts = robust.get_block_receipts(BlockId::hash(block_hash)).await?;
+    let alloy_receipts = alloy_provider
+        .get_block_receipts(BlockId::hash(block_hash))
+        .await?
+        .expect("receipts should exist");
+
+    assert_eq!(robust_receipts.len(), alloy_receipts.len());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_block_receipts_fails() -> anyhow::Result<()> {
+    let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
+
+    // Try to get receipts for a non-existent block
+    let result = robust.get_block_receipts(BlockId::hash(BlockHash::ZERO)).await;
+    assert!(matches!(result, Err(Error::BlockNotFound)));
+
+    // Try to get receipts for a future block
+    let result = robust.get_block_receipts(BlockId::number(999_999)).await;
+    assert!(matches!(result, Err(Error::BlockNotFound)));
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getBlockTransactionCountByHash
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_block_transaction_count_by_hash_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    let robust_count = robust.get_block_transaction_count_by_hash(block_hash).await?;
+    let alloy_count = alloy_provider
+        .get_block_transaction_count_by_hash(block_hash)
+        .await?
+        .expect("count should exist");
+
+    assert_eq!(robust_count, alloy_count);
+    assert_eq!(robust_count, 1);
+
+    // Test genesis block
+    let genesis = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Earliest)
+        .await?
+        .expect("genesis should exist");
+    let genesis_hash = genesis.header.hash;
+
+    let robust_count = robust.get_block_transaction_count_by_hash(genesis_hash).await?;
+    let alloy_count = alloy_provider
+        .get_block_transaction_count_by_hash(genesis_hash)
+        .await?
+        .expect("count should exist");
+
+    assert_eq!(robust_count, alloy_count);
+    assert_eq!(robust_count, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_block_transaction_count_by_hash_fails() -> anyhow::Result<()> {
+    let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
+
+    let result = robust.get_block_transaction_count_by_hash(BlockHash::ZERO).await;
+    assert!(matches!(result, Err(Error::BlockNotFound)));
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getBlockTransactionCountByNumber
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_block_transaction_count_by_number_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    // Send transactions to have something in the block
+    let _ = counter.increase().send().await?.watch().await?;
+
+    // Get the latest block number
+    let block_number = alloy_provider.get_block_number().await?;
+
+    let robust_count = robust
+        .get_block_transaction_count_by_number(BlockNumberOrTag::Number(block_number))
+        .await?;
+    let alloy_count = alloy_provider
+        .get_block_transaction_count_by_number(BlockNumberOrTag::Number(block_number))
+        .await?
+        .expect("count should exist");
+
+    assert_eq!(robust_count, alloy_count);
+
+    let tags = [
+        BlockNumberOrTag::Latest,
+        BlockNumberOrTag::Earliest,
+        BlockNumberOrTag::Safe,
+        BlockNumberOrTag::Finalized,
+    ];
+
+    for tag in tags {
+        let robust_count = robust.get_block_transaction_count_by_number(tag).await?;
+        let alloy_count = alloy_provider
+            .get_block_transaction_count_by_number(tag)
+            .await?
+            .expect("count should exist");
+        assert_eq!(robust_count, alloy_count);
+    }
+
+    // Genesis block should have 0 transactions
+    let robust_count =
+        robust.get_block_transaction_count_by_number(BlockNumberOrTag::Earliest).await?;
+    assert_eq!(robust_count, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_block_transaction_count_by_number_future_block() -> anyhow::Result<()> {
+    let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
+
+    let result = robust
+        .get_block_transaction_count_by_number(BlockNumberOrTag::Number(999_999))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(result, Error::BlockNotFound));
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getCode
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_code_at_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let contract_address = *counter.address();
+
+    let robust_code = robust.get_code_at(contract_address).await?;
+    let alloy_code = alloy_provider.get_code_at(contract_address).await?;
+
+    assert_eq!(robust_code, alloy_code);
+    assert!(!robust_code.is_empty());
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getFilterLogs
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_filter_logs_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let filter = Filter::new().address(*counter.address());
+
+    let filter_id = alloy_provider.new_filter(&filter).await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let robust_logs = robust.get_filter_logs(filter_id).await?;
+    let alloy_logs = alloy_provider.get_filter_logs(filter_id).await?;
+
+    assert_eq!(robust_logs.len(), alloy_logs.len());
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getFilterChanges
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_filter_changes_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+    let filter = Filter::new().address(*counter.address()).event("CountIncreased(uint256)");
+
+    let robust_filter_id = robust.new_filter(&filter).await?;
+    let alloy_filter_id = alloy_provider.new_filter(&filter).await?;
+
+    let robust_changes: Vec<Log> = robust.get_filter_changes(robust_filter_id).await?;
+    let alloy_changes: Vec<Log> = alloy_provider.get_filter_changes(alloy_filter_id).await?;
+
+    assert!(robust_changes.is_empty());
+    assert!(alloy_changes.is_empty());
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let robust_changes: Vec<Log> = robust.get_filter_changes(robust_filter_id).await?;
+    let alloy_changes: Vec<Log> = alloy_provider.get_filter_changes(alloy_filter_id).await?;
+
+    assert_eq!(robust_changes.len(), 1);
+    assert_eq!(alloy_changes.len(), 1);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_newFilter
+// ============================================================================
+
+#[tokio::test]
+async fn test_new_filter_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, _alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let filter = Filter::new().address(*counter.address());
+
+    let robust_filter_id = robust.new_filter(&filter).await?;
+
+    assert!(robust_filter_id > U256::ZERO);
 
     Ok(())
 }
