@@ -6,11 +6,13 @@ use alloy::{
     consensus::TrieAccount,
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{Address, BlockHash, BlockNumber, Bytes, U256},
+    primitives::{
+        Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
+    },
     providers::{Provider, RootProvider},
     rpc::{
         json_rpc::RpcRecv,
-        types::{Bundle, EthCallResponse, FeeHistory, Filter, Log},
+        types::{Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Filter, Log},
     },
 };
 
@@ -98,7 +100,8 @@ impl<N: Network> RobustProvider<N> {
         ///   by the last provider attempted on the last retry.
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
-        fn call(tx: clone N::TransactionRequest) -> Bytes
+        @clone [tx]
+        fn call(tx: N::TransactionRequest) -> Bytes
     );
 
     robust_rpc!(
@@ -148,7 +151,8 @@ impl<N: Network> RobustProvider<N> {
         ///   by the last provider attempted on the last retry.
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
-        fn estimate_gas(tx: clone N::TransactionRequest) -> u64
+        @clone [tx]
+        fn estimate_gas(tx: N::TransactionRequest) -> u64
     );
 
     robust_rpc!(
@@ -183,6 +187,21 @@ impl<N: Network> RobustProvider<N> {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         fn get_gas_price() -> u128
+    );
+
+    robust_rpc!(
+        /// Returns the current max priority fee per gas in wei.
+        ///
+        /// This is a wrapper function for [`Provider::get_max_priority_fee_per_gas`]
+        /// (`eth_maxPriorityFeePerGas`).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_max_priority_fee_per_gas() -> u128
     );
 
     robust_rpc!(
@@ -452,6 +471,194 @@ impl<N: Network> RobustProvider<N> {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         fn new_filter(filter: &Filter) -> U256
+    );
+
+    robust_rpc!(
+        /// Creates a filter in the node to notify when a new block arrives.
+        ///
+        /// This is a wrapper function for [`Provider::new_block_filter`] (`eth_newBlockFilter`).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn new_block_filter() -> U256
+    );
+
+    robust_rpc!(
+        /// Returns the account and storage values of the specified account including the Merkle-proof.
+        ///
+        /// This is a wrapper function for [`Provider::get_proof`] (`eth_getProof`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address of the account.
+        /// * `keys` - A vector of storage keys to include in the proof.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        @clone [keys]
+        fn get_proof(address: Address, keys: Vec<StorageKey>) -> EIP1186AccountProofResponse
+    );
+
+    robust_rpc!(
+        /// Returns the value from a storage position at a given address.
+        ///
+        /// This is a wrapper function for [`Provider::get_storage_at`] (`eth_getStorageAt`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address of the storage.
+        /// * `key` - The position in the storage.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_storage_at(address: Address, key: U256) -> StorageValue
+    );
+
+    robust_rpc!(
+        /// Returns information about a transaction by block hash and transaction index position.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_by_block_hash_and_index`]
+        /// (`eth_getTransactionByBlockHashAndIndex`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block_hash` - The hash of the block.
+        /// * `index` - The transaction index position.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_by_block_hash_and_index(block_hash: B256, index: usize) -> Option<N::TransactionResponse>
+    );
+
+    robust_rpc!(
+        /// Returns information about a transaction by block number and transaction index position.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_by_block_number_and_index`]
+        /// (`eth_getTransactionByBlockNumberAndIndex`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block_number` - The block number or tag.
+        /// * `index` - The transaction index position.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_by_block_number_and_index(block_number: BlockNumberOrTag, index: usize) -> Option<N::TransactionResponse>
+    );
+
+    robust_rpc!(
+        /// Returns information about a transaction by its hash.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_by_hash`]
+        /// (`eth_getTransactionByHash`).
+        ///
+        /// # Arguments
+        ///
+        /// * `hash` - The transaction hash.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_by_hash(hash: TxHash) -> Option<N::TransactionResponse>
+    );
+
+    robust_rpc!(
+        /// Returns the raw transaction data for a transaction by its hash.
+        ///
+        /// This is a wrapper function for [`Provider::get_raw_transaction_by_hash`]
+        /// (`eth_getRawTransactionByHash`).
+        ///
+        /// # Arguments
+        ///
+        /// * `hash` - The transaction hash.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_raw_transaction_by_hash(hash: TxHash) -> Option<Bytes>
+    );
+
+    robust_rpc!(
+        /// Returns the number of transactions sent from an address.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_count`]
+        /// (`eth_getTransactionCount`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address to get the transaction count for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_count(address: Address) -> u64
+    );
+
+    robust_rpc!(
+        /// Returns the receipt of a transaction by transaction hash.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_receipt`]
+        /// (`eth_getTransactionReceipt`).
+        ///
+        /// # Arguments
+        ///
+        /// * `hash` - The transaction hash.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_receipt(hash: TxHash) -> Option<N::ReceiptResponse>
+    );
+
+    robust_rpc!(
+        /// Returns the number of uncles in a block matching the given block identifier.
+        ///
+        /// This is a wrapper function for [`Provider::get_uncle_count`]
+        /// (`eth_getUncleCountByBlockHash` or `eth_getUncleCountByBlockNumber`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block` - The block identifier (hash or number).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_uncle_count(block: BlockId) -> u64
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.

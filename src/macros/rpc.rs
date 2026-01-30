@@ -2,9 +2,9 @@
 
 /// Generates a robust RPC method wrapper with retry and failover.
 ///
-/// # Macros allows for the following variants
+/// # Variants
 ///
-/// ## Simple passthrough (no arguments)
+/// ## No arguments
 /// ```ignore
 /// robust_rpc!(
 ///     /// Doc comment
@@ -12,7 +12,7 @@
 /// );
 /// ```
 ///
-/// ## One or more arguments passthrough (Copy types)
+/// ## Copy arguments
 /// ```ignore
 /// robust_rpc!(
 ///     /// Doc comment
@@ -20,19 +20,40 @@
 /// );
 /// ```
 ///
-/// ## Single argument with clone (non-Copy types)
+/// ## Clone arguments (specify which args to clone)
 /// ```ignore
 /// robust_rpc!(
 ///     /// Doc comment
-///     fn method_name(arg: clone ArgType) -> ReturnType
+///     @clone [arg]
+///     fn method_name(arg: ArgType) -> ReturnType
+/// );
+///
+/// robust_rpc!(
+///     /// Doc comment
+///     @clone [arg2]
+///     fn method_name(arg1: CopyType, arg2: CloneType) -> ReturnType
+/// );
+///
+/// robust_rpc!(
+///     /// Doc comment
+///     @clone [arg1, arg2]
+///     fn method_name(arg1: CloneType, arg2: CloneType) -> ReturnType
 /// );
 /// ```
 ///
-/// ## With Option unwrapping (for methods that return Option and should error on None)
+/// ## With Option unwrapping (errors on None)
 /// ```ignore
 /// robust_rpc!(
 ///     /// Doc comment
-///     fn method_name(arg: ArgType) -> ReturnType; or BlockNotFound
+///     fn method_name(arg: ArgType) -> ReturnType; or ErrorVariant
+/// );
+/// ```
+///
+/// ## With generics
+/// ```ignore
+/// robust_rpc!(
+///     /// Doc comment
+///     fn method_name<T: SomeTrait>(arg: T) -> ReturnType
 /// );
 /// ```
 #[allow(unused_macros)]
@@ -56,22 +77,28 @@ macro_rules! robust_rpc {
         }
     };
 
-    // Single arg with clone (non-Copy types)
+     // Arguments with cloning use with @clone
     (
         $(#[$meta:meta])*
-        fn $method:ident($arg:ident: clone $arg_ty:ty) -> $ret:ty
+        @clone [$($clone_arg:ident),+]
+        fn $method:ident $(<$generic:ident: $bound:path>)? (
+            $($arg:ident: $arg_ty:ty),+
+        ) -> $ret:ty $(; or $err:ident)?
     ) => {
         $(#[$meta])*
-        pub async fn $method(&self, $arg: $arg_ty) -> Result<$ret, Error> {
-            self.try_operation_with_failover(
-                move |provider| {
-                    let $arg = $arg.clone();
-                    async move { provider.$method($arg).await }
-                },
-                false,
-            )
-            .await
-            .map_err(Error::from)
+        pub async fn $method $(<$generic: $bound>)? (&self, $($arg: $arg_ty),+) -> Result<$ret, Error> {
+            let result = self
+                .try_operation_with_failover(
+                    move |provider| {
+                        $(let $clone_arg = $clone_arg.clone();)+
+                        async move {
+                            provider.$method $(::<$generic>)? ($($arg),+).await
+                        }
+                    },
+                    false,
+                )
+                .await;
+            robust_rpc!(@unwrap result $(, $err)?)
         }
     };
 
