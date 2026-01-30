@@ -4,22 +4,26 @@
 ///
 /// # Variants
 ///
-/// ## Basic (auto-generates full documentation)
+/// ## Basic (no arguments)
 /// ```ignore
 /// robust_rpc!(
-///     /// Short description of the method.
 ///     fn method_name() -> ReturnType
 /// );
 /// ```
 ///
-/// ## With arguments (pass argument docs manually)
+/// ## With argument documentation
 /// ```ignore
 /// robust_rpc!(
-///     /// Short description of the method.
-///     /// # Arguments
-///     ///
-///     /// * `block_id` - The block identifier to fetch.
+///     args = [(block_id, "The block identifier to fetch.")]
 ///     fn method_name(block_id: BlockId) -> ReturnType
+/// );
+///
+/// robust_rpc!(
+///     args = [
+///         (address, "The address of the account."),
+///         (keys, "A vector of storage keys to include in the proof.")
+///     ]
+///     fn method_name(address: Address, keys: Vec<StorageKey>) -> ReturnType
 /// );
 /// ```
 ///
@@ -27,7 +31,7 @@
 /// ```ignore
 /// robust_rpc!(
 ///     error = "[`Error::BlockNotFound`] - if the block is not available."
-///     /// Short description of the method.
+///     args = [(block_id, "The block identifier.")]
 ///     fn method_name(block_id: BlockId) -> ReturnType; or BlockNotFound
 /// );
 /// ```
@@ -35,30 +39,34 @@
 /// ## Clone arguments (specify which args to clone)
 /// ```ignore
 /// robust_rpc!(
-///     /// Short description of the method.
-///     @clone [arg]
-///     fn method_name(arg: ArgType) -> ReturnType
+///     args = [(tx, "The transaction request.")]
+///     @clone [tx]
+///     fn method_name(tx: TransactionRequest) -> ReturnType
 /// );
 /// ```
 ///
 /// ## With generics
 /// ```ignore
 /// robust_rpc!(
-///     /// Short description of the method.
-///     fn method_name<T: SomeTrait>(arg: T) -> ReturnType
+///     args = [(filter_id, "The filter ID.")]
+///     fn method_name<T: SomeTrait>(filter_id: U256) -> Vec<T>
 /// );
 /// ```
 #[allow(unused_macros)]
 macro_rules! robust_rpc {
-    // Main pattern with optional error doc: zero or more args, optional error variant
+    // Main pattern: optional error, optional args, zero or more fn args, optional error variant
     (
         $(error = $error_doc:literal)?
-        $(#[$meta:meta])*
+        $(args = [$(($arg_name:ident, $arg_desc:literal)),* $(,)?])?
         fn $method:ident $(<$generic:ident: $bound:path>)? ($($($arg:ident: $arg_ty:ty),+)?) -> $ret:ty $(; or $err:ident)?
     ) => {
         #[doc = concat!("This is a wrapper function for [`Provider::", stringify!($method), "`].")]
+        $($(
         ///
-        $(#[$meta])*
+        /// # Arguments
+        ///
+        #[doc = concat!("* `", stringify!($arg_name), "` - ", $arg_desc)]
+        )*)?
         ///
         /// # Errors
         ///
@@ -85,15 +93,19 @@ macro_rules! robust_rpc {
     // Arguments with cloning use with @clone
     (
         $(error = $error_doc:literal)?
-        $(#[$meta:meta])*
+        $(args = [$(($arg_name:ident, $arg_desc:literal)),* $(,)?])?
         @clone [$($clone_arg:ident),+]
         fn $method:ident $(<$generic:ident: $bound:path>)? (
             $($arg:ident: $arg_ty:ty),+
         ) -> $ret:ty $(; or $err:ident)?
     ) => {
-        $(#[$meta])*
-        ///
         #[doc = concat!("This is a wrapper function for [`Provider::", stringify!($method), "`].")]
+        $($(
+        ///
+        /// # Arguments
+        ///
+        #[doc = concat!("* `", stringify!($arg_name), "` - ", $arg_desc)]
+        )*)?
         ///
         /// # Errors
         ///
