@@ -98,7 +98,8 @@ impl<N: Network> RobustProvider<N> {
         ///   by the last provider attempted on the last retry.
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
-        fn call(tx: clone N::TransactionRequest) -> Bytes
+        @clone [tx]
+        fn call(tx: N::TransactionRequest) -> Bytes
     );
 
     robust_rpc!(
@@ -148,7 +149,8 @@ impl<N: Network> RobustProvider<N> {
         ///   by the last provider attempted on the last retry.
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
-        fn estimate_gas(tx: clone N::TransactionRequest) -> u64
+        @clone [tx]
+        fn estimate_gas(tx: N::TransactionRequest) -> u64
     );
 
     robust_rpc!(
@@ -470,7 +472,8 @@ impl<N: Network> RobustProvider<N> {
         ///   by the last provider attempted on the last retry.
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
-        fn get_proof(address: Address, keys: clone Vec<StorageKey>) -> EIP1186AccountProofResponse
+        @clone [keys]
+        fn get_proof(address: Address, keys: Vec<StorageKey>) -> EIP1186AccountProofResponse
     );
 
     robust_rpc!(
