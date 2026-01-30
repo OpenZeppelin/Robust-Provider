@@ -683,3 +683,135 @@ async fn test_new_filter_succeeds() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// eth_getProof
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_proof_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let contract_address = *counter.address();
+    let storage_keys = vec![];
+
+    let robust_proof = robust.get_proof(contract_address, storage_keys.clone()).await?;
+    let alloy_proof = alloy_provider.get_proof(contract_address, storage_keys).await?;
+
+    assert_eq!(robust_proof.address, alloy_proof.address);
+    assert_eq!(robust_proof.balance, alloy_proof.balance);
+    assert_eq!(robust_proof.nonce, alloy_proof.nonce);
+    assert_eq!(robust_proof.code_hash, alloy_proof.code_hash);
+    assert_eq!(robust_proof.storage_hash, alloy_proof.storage_hash);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_proof_with_storage_keys_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let contract_address = *counter.address();
+    let storage_keys = vec![U256::ZERO.into()];
+
+    let robust_proof = robust.get_proof(contract_address, storage_keys.clone()).await?;
+    let alloy_proof = alloy_provider.get_proof(contract_address, storage_keys).await?;
+
+    assert_eq!(robust_proof.address, alloy_proof.address);
+    assert_eq!(robust_proof.storage_proof.len(), alloy_proof.storage_proof.len());
+    assert_eq!(robust_proof.storage_proof.len(), 1);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getStorageAt
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_storage_at_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+    let _ = counter.increase().send().await?.watch().await?;
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let contract_address = *counter.address();
+
+    let robust_storage = robust.get_storage_at(contract_address, U256::ZERO).await?;
+    let alloy_storage = alloy_provider.get_storage_at(contract_address, U256::ZERO).await?;
+
+    assert_eq!(robust_storage, alloy_storage);
+    assert_eq!(robust_storage, U256::from(3));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_storage_at_empty_slot() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let contract_address = *counter.address();
+
+    let robust_storage = robust.get_storage_at(contract_address, U256::from(999)).await?;
+    let alloy_storage = alloy_provider.get_storage_at(contract_address, U256::from(999)).await?;
+
+    assert_eq!(robust_storage, alloy_storage);
+    assert_eq!(robust_storage, U256::ZERO);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getTransactionByBlockHashAndIndex
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_transaction_by_block_hash_and_index_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    let robust_tx = robust.get_transaction_by_block_hash_and_index(block_hash, 0).await?;
+    let alloy_tx = alloy_provider
+        .get_transaction_by_block_hash_and_index(block_hash, 0)
+        .await?;
+
+    assert!(robust_tx.is_some());
+    assert_eq!(robust_tx, alloy_tx);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_transaction_by_block_hash_and_index_not_found() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    let robust_tx = robust.get_transaction_by_block_hash_and_index(block_hash, 999).await?;
+    let alloy_tx = alloy_provider
+        .get_transaction_by_block_hash_and_index(block_hash, 999)
+        .await?;
+
+    assert!(robust_tx.is_none());
+    assert_eq!(robust_tx, alloy_tx);
+
+    Ok(())
+}

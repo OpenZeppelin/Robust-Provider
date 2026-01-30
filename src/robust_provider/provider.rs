@@ -6,11 +6,11 @@ use alloy::{
     consensus::TrieAccount,
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{Address, BlockHash, BlockNumber, Bytes, U256},
+    primitives::{Address, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, B256, U256},
     providers::{Provider, RootProvider},
     rpc::{
         json_rpc::RpcRecv,
-        types::{Bundle, EthCallResponse, FeeHistory, Filter, Log},
+        types::{Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Filter, Log},
     },
 };
 
@@ -452,6 +452,64 @@ impl<N: Network> RobustProvider<N> {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         fn new_filter(filter: &Filter) -> U256
+    );
+
+    robust_rpc!(
+        /// Returns the account and storage values of the specified account including the Merkle-proof.
+        ///
+        /// This is a wrapper function for [`Provider::get_proof`] (`eth_getProof`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address of the account.
+        /// * `keys` - A vector of storage keys to include in the proof.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_proof(address: Address, keys: clone Vec<StorageKey>) -> EIP1186AccountProofResponse
+    );
+
+    robust_rpc!(
+        /// Returns the value from a storage position at a given address.
+        ///
+        /// This is a wrapper function for [`Provider::get_storage_at`] (`eth_getStorageAt`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address of the storage.
+        /// * `key` - The position in the storage.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_storage_at(address: Address, key: U256) -> StorageValue
+    );
+
+    robust_rpc!(
+        /// Returns information about a transaction by block hash and transaction index position.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_by_block_hash_and_index`]
+        /// (`eth_getTransactionByBlockHashAndIndex`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block_hash` - The hash of the block.
+        /// * `index` - The transaction index position.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_by_block_hash_and_index(block_hash: B256, index: usize) -> Option<N::TransactionResponse>
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.
