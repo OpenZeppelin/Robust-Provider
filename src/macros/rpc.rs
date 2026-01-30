@@ -1,69 +1,74 @@
 //! Macros for generating robust RPC method wrappers with retry and failover logic.
 
-/// Generates a robust RPC method wrapper with retry and failover.
+/// Generates a robust RPC method wrapper with retry and failover, with automatic documentation.
 ///
 /// # Variants
 ///
-/// ## No arguments
+/// ## Basic (auto-generates full documentation)
 /// ```ignore
 /// robust_rpc!(
-///     /// Doc comment
+///     /// Short description of the method.
 ///     fn method_name() -> ReturnType
 /// );
 /// ```
 ///
-/// ## Copy arguments
+/// ## With arguments (pass argument docs manually)
 /// ```ignore
 /// robust_rpc!(
-///     /// Doc comment
-///     fn method_name(arg: ArgType) -> ReturnType
+///     /// Short description of the method.
+///     /// # Arguments
+///     ///
+///     /// * `block_id` - The block identifier to fetch.
+///     fn method_name(block_id: BlockId) -> ReturnType
+/// );
+/// ```
+///
+/// ## With additional error documentation
+/// ```ignore
+/// robust_rpc!(
+///     error = "[`Error::BlockNotFound`] - if the block is not available."
+///     /// Short description of the method.
+///     fn method_name(block_id: BlockId) -> ReturnType; or BlockNotFound
 /// );
 /// ```
 ///
 /// ## Clone arguments (specify which args to clone)
 /// ```ignore
 /// robust_rpc!(
-///     /// Doc comment
+///     /// Short description of the method.
 ///     @clone [arg]
 ///     fn method_name(arg: ArgType) -> ReturnType
-/// );
-///
-/// robust_rpc!(
-///     /// Doc comment
-///     @clone [arg2]
-///     fn method_name(arg1: CopyType, arg2: CloneType) -> ReturnType
-/// );
-///
-/// robust_rpc!(
-///     /// Doc comment
-///     @clone [arg1, arg2]
-///     fn method_name(arg1: CloneType, arg2: CloneType) -> ReturnType
-/// );
-/// ```
-///
-/// ## With Option unwrapping (errors on None)
-/// ```ignore
-/// robust_rpc!(
-///     /// Doc comment
-///     fn method_name(arg: ArgType) -> ReturnType; or ErrorVariant
 /// );
 /// ```
 ///
 /// ## With generics
 /// ```ignore
 /// robust_rpc!(
-///     /// Doc comment
+///     /// Short description of the method.
 ///     fn method_name<T: SomeTrait>(arg: T) -> ReturnType
 /// );
 /// ```
 #[allow(unused_macros)]
 macro_rules! robust_rpc {
-    // Main pattern: zero or more args, optional error variant
+    // Main pattern with optional error doc: zero or more args, optional error variant
     (
+        $(error = $error_doc:literal)?
         $(#[$meta:meta])*
         fn $method:ident $(<$generic:ident: $bound:path>)? ($($($arg:ident: $arg_ty:ty),+)?) -> $ret:ty $(; or $err:ident)?
     ) => {
+        #[doc = concat!("This is a wrapper function for [`Provider::", stringify!($method), "`].")]
+        ///
         $(#[$meta])*
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        $(
+        #[doc = concat!("* ", $error_doc)]
+        )?
         pub async fn $method $(<$generic: $bound>)? (&self $(, $($arg: $arg_ty),+)?) -> Result<$ret, Error> {
             let result = self
                 .try_operation_with_failover(
@@ -77,8 +82,9 @@ macro_rules! robust_rpc {
         }
     };
 
-     // Arguments with cloning use with @clone
+    // Arguments with cloning use with @clone
     (
+        $(error = $error_doc:literal)?
         $(#[$meta:meta])*
         @clone [$($clone_arg:ident),+]
         fn $method:ident $(<$generic:ident: $bound:path>)? (
@@ -86,6 +92,18 @@ macro_rules! robust_rpc {
         ) -> $ret:ty $(; or $err:ident)?
     ) => {
         $(#[$meta])*
+        ///
+        #[doc = concat!("This is a wrapper function for [`Provider::", stringify!($method), "`].")]
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        $(
+        #[doc = concat!("* ", $error_doc)]
+        )?
         pub async fn $method $(<$generic: $bound>)? (&self, $($arg: $arg_ty),+) -> Result<$ret, Error> {
             let result = self
                 .try_operation_with_failover(
