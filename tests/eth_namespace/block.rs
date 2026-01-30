@@ -376,3 +376,51 @@ async fn test_get_block_transaction_count_by_number_future_block() -> anyhow::Re
 
     Ok(())
 }
+
+// ============================================================================
+// eth_getUncleCountByBlockHash / eth_getUncleCountByBlockNumber
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_uncle_count_by_block_number_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    let tags = [
+        BlockId::number(5),
+        BlockId::latest(),
+        BlockId::earliest(),
+        BlockId::safe(),
+        BlockId::finalized(),
+    ];
+
+    for tag in tags {
+        let robust_count = robust.get_uncle_count(tag).await?;
+        let alloy_count = alloy_provider.get_uncle_count(tag).await?;
+
+        assert_eq!(robust_count, alloy_count);
+        // Anvil doesn't produce uncles
+        assert_eq!(robust_count, 0);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_uncle_count_by_block_hash_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(5))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    let robust_count = robust.get_uncle_count(BlockId::hash(block_hash)).await?;
+    let alloy_count = alloy_provider.get_uncle_count(BlockId::hash(block_hash)).await?;
+
+    assert_eq!(robust_count, alloy_count);
+    // Anvil doesn't produce uncles
+    assert_eq!(robust_count, 0);
+
+    Ok(())
+}

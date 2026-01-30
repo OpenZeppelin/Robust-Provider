@@ -162,3 +162,37 @@ async fn test_get_raw_transaction_by_hash_not_found() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// eth_getTransactionReceipt
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_transaction_receipt_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let tx_hash = counter.increase().send().await?.watch().await?;
+
+    let robust_receipt = robust.get_transaction_receipt(tx_hash).await?;
+    let alloy_receipt = alloy_provider.get_transaction_receipt(tx_hash).await?;
+
+    assert!(robust_receipt.is_some());
+    assert_eq!(robust_receipt, alloy_receipt);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_transaction_receipt_not_found() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let fake_hash = B256::ZERO;
+
+    let robust_receipt = robust.get_transaction_receipt(fake_hash).await?;
+    let alloy_receipt = alloy_provider.get_transaction_receipt(fake_hash).await?;
+
+    assert!(robust_receipt.is_none());
+    assert_eq!(robust_receipt, alloy_receipt);
+
+    Ok(())
+}

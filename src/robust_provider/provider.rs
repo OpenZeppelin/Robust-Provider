@@ -575,6 +575,63 @@ impl<N: Network> RobustProvider<N> {
         fn get_raw_transaction_by_hash(hash: TxHash) -> Option<Bytes>
     );
 
+    robust_rpc!(
+        /// Returns the number of transactions sent from an address.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_count`]
+        /// (`eth_getTransactionCount`).
+        ///
+        /// # Arguments
+        ///
+        /// * `address` - The address to get the transaction count for.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_count(address: Address) -> u64
+    );
+
+    robust_rpc!(
+        /// Returns the receipt of a transaction by transaction hash.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_receipt`]
+        /// (`eth_getTransactionReceipt`).
+        ///
+        /// # Arguments
+        ///
+        /// * `hash` - The transaction hash.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_receipt(hash: TxHash) -> Option<N::ReceiptResponse>
+    );
+
+    robust_rpc!(
+        /// Returns the number of uncles in a block matching the given block identifier.
+        ///
+        /// This is a wrapper function for [`Provider::get_uncle_count`]
+        /// (`eth_getUncleCountByBlockHash` or `eth_getUncleCountByBlockNumber`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block` - The block identifier (hash or number).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_uncle_count(block: BlockId) -> u64
+    );
+
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
     /// Returns a `RobustSubscription` that automatically:

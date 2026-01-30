@@ -1,5 +1,8 @@
 use crate::common::{setup_anvil, setup_anvil_with_contract};
-use alloy::{primitives::U256, providers::Provider};
+use alloy::{
+    primitives::{Address, U256},
+    providers::Provider,
+};
 
 // ============================================================================
 // eth_accounts
@@ -155,6 +158,48 @@ async fn test_get_storage_at_empty_slot() -> anyhow::Result<()> {
 
     assert_eq!(robust_storage, alloy_storage);
     assert_eq!(robust_storage, U256::ZERO);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getTransactionCount
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_transaction_count_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let address = accounts[0];
+
+    let robust_count = robust.get_transaction_count(address).await?;
+    let alloy_count = alloy_provider.get_transaction_count(address).await?;
+
+    assert_eq!(robust_count, alloy_count);
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let robust_count_after = robust.get_transaction_count(address).await?;
+    let alloy_count_after = alloy_provider.get_transaction_count(address).await?;
+
+    assert_eq!(robust_count_after, alloy_count_after);
+    assert_eq!(robust_count_after, robust_count + 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_transaction_count_empty_account() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let empty_address = Address::ZERO;
+
+    let robust_count = robust.get_transaction_count(empty_address).await?;
+    let alloy_count = alloy_provider.get_transaction_count(empty_address).await?;
+
+    assert_eq!(robust_count, alloy_count);
+    assert_eq!(robust_count, 0);
 
     Ok(())
 }
