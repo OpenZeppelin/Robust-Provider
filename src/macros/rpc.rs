@@ -52,7 +52,6 @@
 ///     fn method_name<T: SomeTrait>(filter_id: U256) -> Vec<T>
 /// );
 /// ```
-#[allow(unused_macros)]
 macro_rules! robust_rpc {
     // Main pattern: optional doc_errors, optional doc_args, zero or more fn doc_args, optional error variant
     (
@@ -140,4 +139,12 @@ macro_rules! robust_rpc {
     (@unwrap $result:expr, $err:ident) => {
         $result?.ok_or(Error::$err)
     };
+}
+
+/// Documentation string for `BlockNotFound` errors, for use in `robust_rpc!` macro calls.
+///
+/// Usage: `error = block_not_found_doc!()`
+#[macro_export]
+macro_rules! block_not_found_doc {
+    () => { "* [`Error::BlockNotFound`] - if the block is not available. This is verified on Anvil, Reth, and Geth; other clients may surface this condition as [`Error::RpcError`]." };
 }

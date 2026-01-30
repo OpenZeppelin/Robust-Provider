@@ -21,14 +21,6 @@ use tokio::time::error as TokioError;
 
 use super::subscription;
 
-/// Documentation string for `BlockNotFound` errors, for use in `robust_rpc!` macro calls.
-///
-/// Usage: `error = block_not_found_doc!()`
-#[macro_export]
-macro_rules! block_not_found_doc {
-    () => { "* [`Error::BlockNotFound`] - if the block is not available. This is verified on Anvil, Reth, and Geth; other clients may surface this condition as [`Error::RpcError`]." };
-}
-
 /// Errors that can occur when using [`super::RobustProvider`].
 #[derive(Error, Debug, Clone)]
 pub enum Error {
