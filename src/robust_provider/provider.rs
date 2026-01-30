@@ -6,7 +6,7 @@ use alloy::{
     consensus::TrieAccount,
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{Address, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, B256, U256},
+    primitives::{Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, U256},
     providers::{Provider, RootProvider},
     rpc::{
         json_rpc::RpcRecv,

@@ -782,9 +782,7 @@ async fn test_get_transaction_by_block_hash_and_index_succeeds() -> anyhow::Resu
     let block_hash = block.header.hash;
 
     let robust_tx = robust.get_transaction_by_block_hash_and_index(block_hash, 0).await?;
-    let alloy_tx = alloy_provider
-        .get_transaction_by_block_hash_and_index(block_hash, 0)
-        .await?;
+    let alloy_tx = alloy_provider.get_transaction_by_block_hash_and_index(block_hash, 0).await?;
 
     assert!(robust_tx.is_some());
     assert_eq!(robust_tx, alloy_tx);
@@ -806,9 +804,7 @@ async fn test_get_transaction_by_block_hash_and_index_not_found() -> anyhow::Res
     let block_hash = block.header.hash;
 
     let robust_tx = robust.get_transaction_by_block_hash_and_index(block_hash, 999).await?;
-    let alloy_tx = alloy_provider
-        .get_transaction_by_block_hash_and_index(block_hash, 999)
-        .await?;
+    let alloy_tx = alloy_provider.get_transaction_by_block_hash_and_index(block_hash, 999).await?;
 
     assert!(robust_tx.is_none());
     assert_eq!(robust_tx, alloy_tx);
