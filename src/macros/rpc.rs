@@ -36,7 +36,7 @@
 /// );
 /// ```
 ///
-/// ## Clone arguments (specify which doc_args to clone)
+/// ## Clone arguments (specify which args to clone)
 /// ```ignore
 /// robust_rpc!(
 ///     doc_args = [(tx, "The transaction request.")]
