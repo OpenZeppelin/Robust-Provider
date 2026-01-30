@@ -16,7 +16,7 @@ use alloy::{
     },
 };
 
-use crate::{Error, Robustness, robust_provider::RobustSubscription};
+use crate::{Error, Robustness, block_not_found_doc, robust_provider::RobustSubscription};
 
 /// Provider wrapper with built-in retry and timeout mechanisms.
 ///
@@ -102,13 +102,13 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
-        error = "[`Error::BlockNotFound`] - if the block with the specified number/tag is not available. This is verified on Anvil, Reth, and Geth; other clients may surface this condition as [`Error::RpcError`]."
+        error = [block_not_found_doc!()]
         args = [(number, "The block number or tag.")]
         fn get_block_by_number(number: BlockNumberOrTag) -> N::BlockResponse; or BlockNotFound
     );
 
     robust_rpc!(
-        error = "[`Error::BlockNotFound`] - if the block for the specified identifier is not available. This is verified on Anvil, Reth, and Geth; other clients may surface this condition as [`Error::RpcError`]."
+        error = [block_not_found_doc!()]
         args = [(id, "The block identifier.")]
         fn get_block(id: BlockId) -> N::BlockResponse; or BlockNotFound
     );
@@ -116,31 +116,31 @@ impl<N: Network> RobustProvider<N> {
     robust_rpc!(fn get_block_number() -> BlockNumber);
 
     robust_rpc!(
-        error = "[`Error::BlockNotFound`] - if the block for the specified identifier is not available. This is verified on Anvil, Reth, and Geth; other clients may surface this condition as [`Error::RpcError`]."
+        error = [block_not_found_doc!()]
         args = [(block_id, "The block identifier to fetch the block number for.")]
         fn get_block_number_by_id(block_id: BlockId) -> BlockNumber; or BlockNotFound
     );
 
     robust_rpc!(
-        error = "[`Error::BlockNotFound`] - if the block with the specified hash is not available. This is verified on Anvil, Reth, and Geth; other clients may surface this condition as [`Error::RpcError`]."
+        error = [block_not_found_doc!()]
         args = [(hash, "The block hash.")]
         fn get_block_by_hash(hash: BlockHash) -> N::BlockResponse; or BlockNotFound
     );
 
     robust_rpc!(
-        error = "[`Error::BlockNotFound`] - if the block receipts for the specified identifier are not available."
+        error = [block_not_found_doc!()]
         args = [(block, "The block identifier (hash, number, or tag).")]
         fn get_block_receipts(block: BlockId) -> Vec<N::ReceiptResponse>; or BlockNotFound
     );
 
     robust_rpc!(
-        error = "[`Error::BlockNotFound`] - if the block with the specified hash is not available."
+        error = [block_not_found_doc!()]
         args = [(hash, "The block hash.")]
         fn get_block_transaction_count_by_hash(hash: BlockHash) -> u64; or BlockNotFound
     );
 
     robust_rpc!(
-        error = "[`Error::BlockNotFound`] - if the block with the specified number is not available."
+        error = [block_not_found_doc!()]
         args = [(block_number, "The block number or tag.")]
         fn get_block_transaction_count_by_number(block_number: BlockNumberOrTag) -> u64; or BlockNotFound
     );

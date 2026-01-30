@@ -30,7 +30,7 @@
 /// ## With additional error documentation
 /// ```ignore
 /// robust_rpc!(
-///     error = "[`Error::BlockNotFound`] - if the block is not available."
+///     error = ["[`Error::BlockNotFound`] - if the block is not available."]
 ///     args = [(block_id, "The block identifier.")]
 ///     fn method_name(block_id: BlockId) -> ReturnType; or BlockNotFound
 /// );
@@ -56,7 +56,7 @@
 macro_rules! robust_rpc {
     // Main pattern: optional error, optional args, zero or more fn args, optional error variant
     (
-        $(error = $error_doc:literal)?
+        $(error = [$($error_doc:tt)+])?
         $(args = [$(($arg_name:ident, $arg_desc:literal)),* $(,)?])?
         fn $method:ident $(<$generic:ident: $bound:path>)? ($($($arg:ident: $arg_ty:ty),+)?) -> $ret:ty $(; or $err:ident)?
     ) => {
@@ -75,7 +75,7 @@ macro_rules! robust_rpc {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         $(
-        #[doc = concat!("* ", $error_doc)]
+        #[doc = $($error_doc)+]
         )?
         pub async fn $method $(<$generic: $bound>)? (&self $(, $($arg: $arg_ty),+)?) -> Result<$ret, Error> {
             let result = self
@@ -92,7 +92,7 @@ macro_rules! robust_rpc {
 
     // Arguments with cloning use with @clone
     (
-        $(error = $error_doc:literal)?
+        $(error = [$($error_doc:tt)+])?
         $(args = [$(($arg_name:ident, $arg_desc:literal)),* $(,)?])?
         @clone [$($clone_arg:ident),+]
         fn $method:ident $(<$generic:ident: $bound:path>)? (
@@ -114,7 +114,7 @@ macro_rules! robust_rpc {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         $(
-        #[doc = concat!("* ", $error_doc)]
+        #[doc = $($error_doc)+]
         )?
         pub async fn $method $(<$generic: $bound>)? (&self, $($arg: $arg_ty),+) -> Result<$ret, Error> {
             let result = self
