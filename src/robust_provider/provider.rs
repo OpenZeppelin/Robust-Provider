@@ -6,7 +6,9 @@ use alloy::{
     consensus::TrieAccount,
     eips::{BlockId, BlockNumberOrTag},
     network::{Ethereum, Network},
-    primitives::{Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, U256},
+    primitives::{
+        Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
+    },
     providers::{Provider, RootProvider},
     rpc::{
         json_rpc::RpcRecv,
@@ -513,6 +515,64 @@ impl<N: Network> RobustProvider<N> {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         fn get_transaction_by_block_hash_and_index(block_hash: B256, index: usize) -> Option<N::TransactionResponse>
+    );
+
+    robust_rpc!(
+        /// Returns information about a transaction by block number and transaction index position.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_by_block_number_and_index`]
+        /// (`eth_getTransactionByBlockNumberAndIndex`).
+        ///
+        /// # Arguments
+        ///
+        /// * `block_number` - The block number or tag.
+        /// * `index` - The transaction index position.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_by_block_number_and_index(block_number: BlockNumberOrTag, index: usize) -> Option<N::TransactionResponse>
+    );
+
+    robust_rpc!(
+        /// Returns information about a transaction by its hash.
+        ///
+        /// This is a wrapper function for [`Provider::get_transaction_by_hash`]
+        /// (`eth_getTransactionByHash`).
+        ///
+        /// # Arguments
+        ///
+        /// * `hash` - The transaction hash.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_transaction_by_hash(hash: TxHash) -> Option<N::TransactionResponse>
+    );
+
+    robust_rpc!(
+        /// Returns the raw transaction data for a transaction by its hash.
+        ///
+        /// This is a wrapper function for [`Provider::get_raw_transaction_by_hash`]
+        /// (`eth_getRawTransactionByHash`).
+        ///
+        /// # Arguments
+        ///
+        /// * `hash` - The transaction hash.
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_raw_transaction_by_hash(hash: TxHash) -> Option<Bytes>
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.
