@@ -56,3 +56,19 @@ async fn test_get_gas_price_succeeds() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// eth_maxPriorityFeePerGas
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_max_priority_fee_per_gas_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_fee = robust.get_max_priority_fee_per_gas().await?;
+    let alloy_fee = alloy_provider.get_max_priority_fee_per_gas().await?;
+
+    assert_eq!(robust_fee, alloy_fee);
+
+    Ok(())
+}

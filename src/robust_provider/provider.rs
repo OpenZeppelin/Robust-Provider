@@ -190,6 +190,21 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
+        /// Returns the current max priority fee per gas in wei.
+        ///
+        /// This is a wrapper function for [`Provider::get_max_priority_fee_per_gas`]
+        /// (`eth_maxPriorityFeePerGas`).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn get_max_priority_fee_per_gas() -> u128
+    );
+
+    robust_rpc!(
         /// Retrieves account information ([`TrieAccount`]) for the given
         /// [`Address`] at the particular [`BlockId`].
         ///
@@ -456,6 +471,20 @@ impl<N: Network> RobustProvider<N> {
         /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         fn new_filter(filter: &Filter) -> U256
+    );
+
+    robust_rpc!(
+        /// Creates a filter in the node to notify when a new block arrives.
+        ///
+        /// This is a wrapper function for [`Provider::new_block_filter`] (`eth_newBlockFilter`).
+        ///
+        /// # Errors
+        ///
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        ///   by the last provider attempted on the last retry.
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        ///   `call_timeout`).
+        fn new_block_filter() -> U256
     );
 
     robust_rpc!(

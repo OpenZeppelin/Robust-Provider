@@ -1,4 +1,4 @@
-use crate::common::setup_anvil_with_contract;
+use crate::common::{setup_anvil, setup_anvil_with_contract};
 use alloy::{
     primitives::U256,
     providers::Provider,
@@ -69,6 +69,23 @@ async fn test_new_filter_succeeds() -> anyhow::Result<()> {
     let robust_filter_id = robust.new_filter(&filter).await?;
 
     assert!(robust_filter_id > U256::ZERO);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_newBlockFilter
+// ============================================================================
+
+#[tokio::test]
+async fn test_new_block_filter_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_filter_id = robust.new_block_filter().await?;
+    let alloy_filter_id = alloy_provider.new_block_filter().await?;
+
+    assert!(robust_filter_id > U256::ZERO);
+    assert!(alloy_filter_id > U256::ZERO);
 
     Ok(())
 }
