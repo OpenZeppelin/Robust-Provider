@@ -61,26 +61,26 @@ impl<N: Network> RobustProvider<N> {
     robust_rpc!(fn get_blob_base_fee() -> u128);
 
     robust_rpc!(
-        args = [(tx, "The transaction request to simulate.")]
+        doc_args = [(tx, "The transaction request to simulate.")]
         @clone [tx]
         fn call(tx: N::TransactionRequest) -> Bytes
     );
 
     robust_rpc!(
-        args = [(bundles, "A slice of transaction bundles to execute.")]
+        doc_args = [(bundles, "A slice of transaction bundles to execute.")]
         fn call_many(bundles: &[Bundle]) -> Vec<Vec<EthCallResponse>>
     );
 
     robust_rpc!(fn get_chain_id() -> u64);
 
     robust_rpc!(
-        args = [(tx, "The transaction request to estimate gas for.")]
+        doc_args = [(tx, "The transaction request to estimate gas for.")]
         @clone [tx]
         fn estimate_gas(tx: N::TransactionRequest) -> u64
     );
 
     robust_rpc!(
-        args = [
+        doc_args = [
             (block_count, "The number of blocks to include in the fee history."),
             (last_block, "The last block to include in the fee history."),
             (reward_percentiles, "A list of percentiles to compute reward values for.")
@@ -92,88 +92,88 @@ impl<N: Network> RobustProvider<N> {
     robust_rpc!(fn get_max_priority_fee_per_gas() -> u128);
 
     robust_rpc!(
-        args = [(address, "The address to get the account for.")]
+        doc_args = [(address, "The address to get the account for.")]
         fn get_account(address: Address) -> TrieAccount
     );
 
     robust_rpc!(
-        args = [(address, "The address to get the balance for.")]
+        doc_args = [(address, "The address to get the balance for.")]
         fn get_balance(address: Address) -> U256
     );
 
     robust_rpc!(
-        error = [block_not_found_doc!()]
-        args = [(number, "The block number or tag.")]
+        doc_include_error = [block_not_found_doc!()]
+        doc_args = [(number, "The block number or tag.")]
         fn get_block_by_number(number: BlockNumberOrTag) -> N::BlockResponse; or BlockNotFound
     );
 
     robust_rpc!(
-        error = [block_not_found_doc!()]
-        args = [(id, "The block identifier.")]
+        doc_include_error = [block_not_found_doc!()]
+        doc_args = [(id, "The block identifier.")]
         fn get_block(id: BlockId) -> N::BlockResponse; or BlockNotFound
     );
 
     robust_rpc!(fn get_block_number() -> BlockNumber);
 
     robust_rpc!(
-        error = [block_not_found_doc!()]
-        args = [(block_id, "The block identifier to fetch the block number for.")]
+        doc_include_error = [block_not_found_doc!()]
+        doc_args = [(block_id, "The block identifier to fetch the block number for.")]
         fn get_block_number_by_id(block_id: BlockId) -> BlockNumber; or BlockNotFound
     );
 
     robust_rpc!(
-        error = [block_not_found_doc!()]
-        args = [(hash, "The block hash.")]
+        doc_include_error = [block_not_found_doc!()]
+        doc_args = [(hash, "The block hash.")]
         fn get_block_by_hash(hash: BlockHash) -> N::BlockResponse; or BlockNotFound
     );
 
     robust_rpc!(
-        error = [block_not_found_doc!()]
-        args = [(block, "The block identifier (hash, number, or tag).")]
+        doc_include_error = [block_not_found_doc!()]
+        doc_args = [(block, "The block identifier (hash, number, or tag).")]
         fn get_block_receipts(block: BlockId) -> Vec<N::ReceiptResponse>; or BlockNotFound
     );
 
     robust_rpc!(
-        error = [block_not_found_doc!()]
-        args = [(hash, "The block hash.")]
+        doc_include_error = [block_not_found_doc!()]
+        doc_args = [(hash, "The block hash.")]
         fn get_block_transaction_count_by_hash(hash: BlockHash) -> u64; or BlockNotFound
     );
 
     robust_rpc!(
-        error = [block_not_found_doc!()]
-        args = [(block_number, "The block number or tag.")]
+        doc_include_error = [block_not_found_doc!()]
+        doc_args = [(block_number, "The block number or tag.")]
         fn get_block_transaction_count_by_number(block_number: BlockNumberOrTag) -> u64; or BlockNotFound
     );
 
     robust_rpc!(
-        args = [(filter, "The log filter.")]
+        doc_args = [(filter, "The log filter.")]
         fn get_logs(filter: &Filter) -> Vec<Log>
     );
 
     robust_rpc!(
-        args = [(address, "The address to get the code for.")]
+        doc_args = [(address, "The address to get the code for.")]
         fn get_code_at(address: Address) -> Bytes
     );
 
     robust_rpc!(
-        args = [(filter_id, "The filter ID to fetch logs for.")]
+        doc_args = [(filter_id, "The filter ID to fetch logs for.")]
         fn get_filter_logs(filter_id: U256) -> Vec<Log>
     );
 
     robust_rpc!(
-        args = [(filter_id, "The filter ID to get changes for.")]
+        doc_args = [(filter_id, "The filter ID to get changes for.")]
         fn get_filter_changes<R: RpcRecv>(filter_id: U256) -> Vec<R>
     );
 
     robust_rpc!(
-        args = [(filter, "The filter to create.")]
+        doc_args = [(filter, "The filter to create.")]
         fn new_filter(filter: &Filter) -> U256
     );
 
     robust_rpc!(fn new_block_filter() -> U256);
 
     robust_rpc!(
-        args = [
+        doc_args = [
             (address, "The address of the account."),
             (keys, "A vector of storage keys to include in the proof.")
         ]
@@ -182,7 +182,7 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
-        args = [
+        doc_args = [
             (address, "The address of the storage."),
             (key, "The position in the storage.")
         ]
@@ -190,7 +190,7 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
-        args = [
+        doc_args = [
             (block_hash, "The hash of the block."),
             (index, "The transaction index position.")
         ]
@@ -198,7 +198,7 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
-        args = [
+        doc_args = [
             (block_number, "The block number or tag."),
             (index, "The transaction index position.")
         ]
@@ -206,27 +206,27 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
-        args = [(hash, "The transaction hash.")]
+        doc_args = [(hash, "The transaction hash.")]
         fn get_transaction_by_hash(hash: TxHash) -> Option<N::TransactionResponse>
     );
 
     robust_rpc!(
-        args = [(hash, "The transaction hash.")]
+        doc_args = [(hash, "The transaction hash.")]
         fn get_raw_transaction_by_hash(hash: TxHash) -> Option<Bytes>
     );
 
     robust_rpc!(
-        args = [(address, "The address to get the transaction count for.")]
+        doc_args = [(address, "The address to get the transaction count for.")]
         fn get_transaction_count(address: Address) -> u64
     );
 
     robust_rpc!(
-        args = [(hash, "The transaction hash.")]
+        doc_args = [(hash, "The transaction hash.")]
         fn get_transaction_receipt(hash: TxHash) -> Option<N::ReceiptResponse>
     );
 
     robust_rpc!(
-        args = [(block, "The block identifier (hash or number).")]
+        doc_args = [(block, "The block identifier (hash or number).")]
         fn get_uncle_count(block: BlockId) -> u64
     );
 
