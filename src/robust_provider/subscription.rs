@@ -18,6 +18,11 @@ use tokio_util::sync::ReusableBoxFuture;
 
 use crate::robust_provider::{CoreError, RobustProvider, Robustness};
 
+#[cfg(feature = "http-subscription")]
+use crate::robust_provider::http_subscription::{
+    HttpPollingSubscription, HttpSubscriptionConfig, HttpSubscriptionError,
+};
+
 /// Errors that can occur when using [`RobustSubscription`].
 #[derive(Error, Debug, Clone)]
 pub enum Error {
@@ -55,37 +60,96 @@ impl From<tokio::time::error::Elapsed> for Error {
     }
 }
 
+#[cfg(feature = "http-subscription")]
+impl From<HttpSubscriptionError> for Error {
+    fn from(err: HttpSubscriptionError) -> Self {
+        match err {
+            HttpSubscriptionError::Timeout => Error::Timeout,
+            HttpSubscriptionError::RpcError(e) => Error::RpcError(e),
+            HttpSubscriptionError::Closed => Error::Closed,
+            HttpSubscriptionError::BlockFetchFailed(msg) => {
+                // Use custom_str which returns RpcError directly
+                Error::RpcError(Arc::new(TransportErrorKind::custom_str(&msg)))
+            }
+        }
+    }
+}
+
 /// Default time interval between primary provider reconnection attempts
 pub const DEFAULT_RECONNECT_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Timeout for validating HTTP provider reachability during reconnection
+const HTTP_RECONNECT_VALIDATION_TIMEOUT: Duration = Duration::from_millis(150);
+
+/// Backend for subscriptions - either native WebSocket or HTTP polling.
+///
+/// This enum allows `RobustSubscription` to transparently handle both
+/// WebSocket-based and HTTP polling-based subscriptions.
+#[derive(Debug)]
+pub(crate) enum SubscriptionBackend<N: Network> {
+    /// Native WebSocket subscription using pubsub
+    WebSocket(Subscription<N::HeaderResponse>),
+    /// HTTP polling-based subscription (requires `http-subscription` feature)
+    #[cfg(feature = "http-subscription")]
+    HttpPolling(HttpPollingSubscription<N>),
+}
 
 /// A robust subscription wrapper that automatically handles provider failover
 /// and periodic reconnection attempts to the primary provider.
 #[derive(Debug)]
 pub struct RobustSubscription<N: Network> {
-    subscription: Subscription<N::HeaderResponse>,
+    backend: SubscriptionBackend<N>,
     robust_provider: RobustProvider<N>,
     last_reconnect_attempt: Option<Instant>,
     current_fallback_index: Option<usize>,
+    /// Configuration for HTTP polling (stored for failover to HTTP providers)
+    #[cfg(feature = "http-subscription")]
+    http_config: HttpSubscriptionConfig,
 }
 
 impl<N: Network> RobustSubscription<N> {
-    /// Create a new [`RobustSubscription`]
+    /// Create a new [`RobustSubscription`] with a WebSocket backend.
     pub(crate) fn new(
         subscription: Subscription<N::HeaderResponse>,
         robust_provider: RobustProvider<N>,
     ) -> Self {
+        #[cfg(feature = "http-subscription")]
+        let http_config = HttpSubscriptionConfig {
+            poll_interval: robust_provider.poll_interval,
+            call_timeout: robust_provider.call_timeout,
+            buffer_capacity: robust_provider.subscription_buffer_capacity,
+        };
+
         Self {
-            subscription,
+            backend: SubscriptionBackend::WebSocket(subscription),
             robust_provider,
             last_reconnect_attempt: None,
             current_fallback_index: None,
+            #[cfg(feature = "http-subscription")]
+            http_config,
+        }
+    }
+
+    /// Create a new [`RobustSubscription`] with an HTTP polling backend.
+    #[cfg(feature = "http-subscription")]
+    pub(crate) fn new_http(
+        subscription: HttpPollingSubscription<N>,
+        robust_provider: RobustProvider<N>,
+        config: HttpSubscriptionConfig,
+    ) -> Self {
+        Self {
+            backend: SubscriptionBackend::HttpPolling(subscription),
+            robust_provider,
+            last_reconnect_attempt: None,
+            current_fallback_index: None,
+            http_config: config,
         }
     }
 
     /// Receive the next item from the subscription with automatic failover.
     ///
     /// This method will:
-    /// * Attempt to receive from the current subscription
+    /// * Attempt to receive from the current subscription (WebSocket or HTTP polling)
     /// * Handle errors by switching to fallback providers
     /// * Periodically attempt to reconnect to the primary provider
     /// * Will switch to fallback providers if subscription timeout is exhausted
@@ -108,19 +172,45 @@ impl<N: Network> RobustSubscription<N> {
         let subscription_timeout = self.robust_provider.subscription_timeout;
 
         loop {
-            match timeout(subscription_timeout, self.subscription.recv()).await {
-                Ok(Ok(header)) => {
+            // Receive from the appropriate backend
+            let result = match &mut self.backend {
+                SubscriptionBackend::WebSocket(sub) => {
+                    match timeout(subscription_timeout, sub.recv()).await {
+                        Ok(Ok(header)) => Ok(header),
+                        Ok(Err(recv_error)) => Err(Error::from(recv_error)),
+                        Err(_elapsed) => Err(Error::Timeout),
+                    }
+                }
+                #[cfg(feature = "http-subscription")]
+                SubscriptionBackend::HttpPolling(sub) => {
+                    match timeout(subscription_timeout, sub.recv()).await {
+                        Ok(Ok(header)) => Ok(header),
+                        Ok(Err(e)) => Err(Error::from(e)),
+                        Err(_elapsed) => Err(Error::Timeout),
+                    }
+                }
+            };
+
+            match result {
+                Ok(header) => {
                     if self.is_on_fallback() {
                         self.try_reconnect_to_primary(false).await;
                     }
                     return Ok(header);
                 }
-                Ok(Err(recv_error)) => return Err(recv_error.into()),
-                Err(_elapsed) => {
+                Err(Error::Timeout) => {
                     warn!(
                         timeout_secs = subscription_timeout.as_secs(),
                         "Subscription timeout - no block received, switching provider"
                     );
+                    self.switch_to_fallback(CoreError::Timeout).await?;
+                }
+                // Propagate these errors directly without failover
+                Err(Error::Closed) => return Err(Error::Closed),
+                Err(Error::Lagged(count)) => return Err(Error::Lagged(count)),
+                // RPC errors trigger failover
+                Err(Error::RpcError(_e)) => {
+                    warn!("Subscription RPC error, switching provider");
                     self.switch_to_fallback(CoreError::Timeout).await?;
                 }
             }
@@ -143,23 +233,49 @@ impl<N: Network> RobustSubscription<N> {
             return false;
         }
 
-        let operation =
-            move |provider: RootProvider<N>| async move { provider.subscribe_blocks().await };
-
         let primary = self.robust_provider.primary();
-        let subscription =
-            self.robust_provider.try_provider_with_timeout(primary, &operation).await;
 
-        if let Ok(sub) = subscription {
-            info!("Reconnected to primary provider");
-            self.subscription = sub;
-            self.current_fallback_index = None;
-            self.last_reconnect_attempt = None;
-            true
-        } else {
-            self.last_reconnect_attempt = Some(Instant::now());
-            false
+        // Try WebSocket subscription first if supported
+        if Self::supports_pubsub(primary) {
+            let operation =
+                move |provider: RootProvider<N>| async move { provider.subscribe_blocks().await };
+
+            let subscription =
+                self.robust_provider.try_provider_with_timeout(primary, &operation).await;
+
+            if let Ok(sub) = subscription {
+                info!("Reconnected to primary provider (WebSocket)");
+                self.backend = SubscriptionBackend::WebSocket(sub);
+                self.current_fallback_index = None;
+                self.last_reconnect_attempt = None;
+                return true;
+            }
         }
+
+        // Try HTTP polling if enabled and WebSocket not available/failed
+        #[cfg(feature = "http-subscription")]
+        if self.robust_provider.allow_http_subscriptions {
+            let validation = tokio::time::timeout(
+                HTTP_RECONNECT_VALIDATION_TIMEOUT,
+                primary.get_block_number(),
+            )
+            .await;
+
+            if matches!(validation, Ok(Ok(_))) {
+                let http_sub = HttpPollingSubscription::new(
+                    primary.clone(),
+                    self.http_config.clone(),
+                );
+                info!("Reconnected to primary provider (HTTP polling)");
+                self.backend = SubscriptionBackend::HttpPolling(http_sub);
+                self.current_fallback_index = None;
+                self.last_reconnect_attempt = None;
+                return true;
+            }
+        }
+
+        self.last_reconnect_attempt = Some(Instant::now());
+        false
     }
 
     async fn switch_to_fallback(&mut self, last_error: CoreError) -> Result<(), Error> {
@@ -172,21 +288,55 @@ impl<N: Network> RobustSubscription<N> {
             self.last_reconnect_attempt = Some(Instant::now());
         }
 
-        let operation =
-            move |provider: RootProvider<N>| async move { provider.subscribe_blocks().await };
-
         // Start searching from the next provider after the current one
         let start_index = self.current_fallback_index.map_or(0, |idx| idx + 1);
+        let fallback_providers = self.robust_provider.fallback_providers();
 
-        let (sub, fallback_idx) = self
-            .robust_provider
-            .try_fallback_providers_from(&operation, true, last_error, start_index)
-            .await?;
+        // Try each fallback provider
+        for (idx, provider) in fallback_providers.iter().enumerate().skip(start_index) {
+            // Try WebSocket subscription first if provider supports pubsub
+            if Self::supports_pubsub(provider) {
+                let operation =
+                    move |p: RootProvider<N>| async move { p.subscribe_blocks().await };
 
-        info!(fallback_index = fallback_idx, "Subscription switched to fallback provider");
-        self.subscription = sub;
-        self.current_fallback_index = Some(fallback_idx);
-        Ok(())
+                if let Ok(sub) = self
+                    .robust_provider
+                    .try_provider_with_timeout(provider, &operation)
+                    .await
+                {
+                    info!(
+                        fallback_index = idx,
+                        "Subscription switched to fallback provider (WebSocket)"
+                    );
+                    self.backend = SubscriptionBackend::WebSocket(sub);
+                    self.current_fallback_index = Some(idx);
+                    return Ok(());
+                }
+            }
+
+            // Try HTTP polling if enabled
+            #[cfg(feature = "http-subscription")]
+            if self.robust_provider.allow_http_subscriptions {
+                let http_sub = HttpPollingSubscription::new(
+                    provider.clone(),
+                    self.http_config.clone(),
+                );
+                info!(
+                    fallback_index = idx,
+                    "Subscription switched to fallback provider (HTTP polling)"
+                );
+                self.backend = SubscriptionBackend::HttpPolling(http_sub);
+                self.current_fallback_index = Some(idx);
+                return Ok(());
+            }
+        }
+
+        // All fallbacks exhausted
+        error!(
+            attempted_providers = fallback_providers.len() + 1,
+            "All providers exhausted for subscription"
+        );
+        Err(last_error.into())
     }
 
     /// Returns true if currently using a fallback provider
@@ -194,10 +344,19 @@ impl<N: Network> RobustSubscription<N> {
         self.current_fallback_index.is_some()
     }
 
+    /// Check if a provider supports native pubsub (WebSocket)
+    fn supports_pubsub(provider: &RootProvider<N>) -> bool {
+        provider.client().pubsub_frontend().is_some()
+    }
+
     /// Check if the subscription channel is empty (no pending messages)
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.subscription.is_empty()
+        match &self.backend {
+            SubscriptionBackend::WebSocket(sub) => sub.is_empty(),
+            #[cfg(feature = "http-subscription")]
+            SubscriptionBackend::HttpPolling(sub) => sub.is_empty(),
+        }
     }
 
     /// Convert the subscription into a stream.

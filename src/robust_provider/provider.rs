@@ -18,6 +18,9 @@ use alloy::{
 
 use crate::{Error, Robustness, robust_provider::RobustSubscription};
 
+#[cfg(feature = "http-subscription")]
+use crate::robust_provider::http_subscription::{HttpPollingSubscription, HttpSubscriptionConfig};
+
 /// Provider wrapper with built-in retry and timeout mechanisms.
 ///
 /// This wrapper around Alloy providers automatically handles retries,
@@ -32,6 +35,12 @@ pub struct RobustProvider<N: Network = Ethereum> {
     pub(crate) min_delay: Duration,
     pub(crate) reconnect_interval: Duration,
     pub(crate) subscription_buffer_capacity: usize,
+    /// Polling interval for HTTP-based subscriptions.
+    #[cfg(feature = "http-subscription")]
+    pub(crate) poll_interval: Duration,
+    /// Whether HTTP providers can participate in subscriptions via polling.
+    #[cfg(feature = "http-subscription")]
+    pub(crate) allow_http_subscriptions: bool,
 }
 
 impl<N: Network> Robustness<N> for RobustProvider<N> {
@@ -668,6 +677,10 @@ impl<N: Network> RobustProvider<N> {
     /// * Detects and recovers from lagged subscriptions
     /// * Periodically attempts to reconnect to the primary provider
     ///
+    /// When the `http-subscription` feature is enabled and
+    /// [`allow_http_subscriptions`](crate::RobustProviderBuilder::allow_http_subscriptions)
+    /// is set to `true`, HTTP providers can participate in subscriptions via polling.
+    ///
     /// This is a wrapper function for [`Provider::subscribe_blocks`].
     ///
     /// # Errors
@@ -677,6 +690,50 @@ impl<N: Network> RobustProvider<N> {
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
     pub async fn subscribe_blocks(&self) -> Result<RobustSubscription<N>, Error> {
+        // Check if primary supports native pubsub (WebSocket)
+        let primary_supports_pubsub = self.primary_provider.client().pubsub_frontend().is_some();
+
+        if primary_supports_pubsub {
+            // Try WebSocket subscription on primary and fallbacks
+            let subscription = self
+                .try_operation_with_failover(
+                    move |provider| async move {
+                        provider
+                            .subscribe_blocks()
+                            .channel_size(self.subscription_buffer_capacity)
+                            .await
+                    },
+                    true, // require_pubsub
+                )
+                .await?;
+
+            return Ok(RobustSubscription::new(subscription, self.clone()));
+        }
+
+        // Primary doesn't support pubsub - try HTTP polling if enabled
+        #[cfg(feature = "http-subscription")]
+        if self.allow_http_subscriptions {
+            let config = HttpSubscriptionConfig {
+                poll_interval: self.poll_interval,
+                call_timeout: self.call_timeout,
+                buffer_capacity: self.subscription_buffer_capacity,
+            };
+
+            info!(
+                poll_interval_ms = self.poll_interval.as_millis(),
+                "Starting HTTP polling subscription on primary provider"
+            );
+
+            let http_sub = HttpPollingSubscription::new(
+                self.primary_provider.clone(),
+                config.clone(),
+            );
+
+            return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
+        }
+
+        // Primary doesn't support pubsub and HTTP subscriptions not enabled
+        // Try fallback providers that support pubsub
         let subscription = self
             .try_operation_with_failover(
                 move |provider| async move {
@@ -685,7 +742,7 @@ impl<N: Network> RobustProvider<N> {
                         .channel_size(self.subscription_buffer_capacity)
                         .await
                 },
-                true,
+                true, // require_pubsub
             )
             .await?;
 

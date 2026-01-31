@@ -6,6 +6,9 @@ use crate::robust_provider::{
     Error, IntoRootProvider, RobustProvider, subscription::DEFAULT_RECONNECT_INTERVAL,
 };
 
+#[cfg(feature = "http-subscription")]
+use crate::robust_provider::http_subscription::DEFAULT_POLL_INTERVAL;
+
 type BoxedProviderFuture<N> = Pin<Box<dyn Future<Output = Result<RootProvider<N>, Error>> + Send>>;
 
 // RPC retry and timeout settings
@@ -32,6 +35,10 @@ pub struct RobustProviderBuilder<N: Network, P: IntoRootProvider<N>> {
     min_delay: Duration,
     reconnect_interval: Duration,
     subscription_buffer_capacity: usize,
+    #[cfg(feature = "http-subscription")]
+    poll_interval: Duration,
+    #[cfg(feature = "http-subscription")]
+    allow_http_subscriptions: bool,
 }
 
 impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
@@ -50,6 +57,10 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
             min_delay: DEFAULT_MIN_DELAY,
             reconnect_interval: DEFAULT_RECONNECT_INTERVAL,
             subscription_buffer_capacity: DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY,
+            #[cfg(feature = "http-subscription")]
+            poll_interval: DEFAULT_POLL_INTERVAL,
+            #[cfg(feature = "http-subscription")]
+            allow_http_subscriptions: false,
         }
     }
 
@@ -125,6 +136,56 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
         self
     }
 
+    /// Set the polling interval for HTTP-based subscriptions.
+    ///
+    /// This controls how frequently HTTP providers poll for new blocks
+    /// when used as subscription sources. Only relevant when
+    /// [`allow_http_subscriptions`](Self::allow_http_subscriptions) is enabled.
+    ///
+    /// Default is 12 seconds (approximate Ethereum mainnet block time).
+    /// Adjust based on your target chain's block time.
+    ///
+    /// # Feature Flag
+    ///
+    /// This method requires the `http-subscription` feature.
+    #[cfg(feature = "http-subscription")]
+    #[must_use]
+    pub fn poll_interval(mut self, interval: Duration) -> Self {
+        self.poll_interval = interval;
+        self
+    }
+
+    /// Enable HTTP providers for subscriptions via polling.
+    ///
+    /// When enabled, HTTP providers can participate in subscriptions
+    /// by polling for new blocks at the configured [`poll_interval`](Self::poll_interval).
+    ///
+    /// # Trade-offs
+    ///
+    /// - **Latency**: New blocks detected with up to `poll_interval` delay
+    /// - **RPC Load**: Generates one RPC call per `poll_interval`
+    /// - **Missed Blocks**: If `poll_interval` > block time, intermediate blocks may be missed
+    ///
+    /// # Feature Flag
+    ///
+    /// This method requires the `http-subscription` feature.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let robust = RobustProviderBuilder::new(http_provider)
+    ///     .allow_http_subscriptions(true)
+    ///     .poll_interval(Duration::from_secs(6)) // For faster chains
+    ///     .build()
+    ///     .await?;
+    /// ```
+    #[cfg(feature = "http-subscription")]
+    #[must_use]
+    pub fn allow_http_subscriptions(mut self, allow: bool) -> Self {
+        self.allow_http_subscriptions = allow;
+        self
+    }
+
     /// Build the `RobustProvider`.
     ///
     /// Final builder method: consumes the builder and returns the built [`RobustProvider`].
@@ -163,6 +224,10 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
             min_delay: self.min_delay,
             reconnect_interval: self.reconnect_interval,
             subscription_buffer_capacity: self.subscription_buffer_capacity,
+            #[cfg(feature = "http-subscription")]
+            poll_interval: self.poll_interval,
+            #[cfg(feature = "http-subscription")]
+            allow_http_subscriptions: self.allow_http_subscriptions,
         })
     }
 }
