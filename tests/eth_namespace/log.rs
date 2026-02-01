@@ -115,7 +115,7 @@ async fn test_uninstall_filter_succeeds() -> anyhow::Result<()> {
 async fn test_uninstall_filter_returns_false_for_invalid_id() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
-    let invalid_filter_id = U256::from(999999);
+    let invalid_filter_id = U256::from(999);
 
     let robust_result = robust.uninstall_filter(invalid_filter_id).await?;
     let alloy_result = alloy_provider.uninstall_filter(invalid_filter_id).await?;
