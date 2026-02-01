@@ -89,3 +89,39 @@ async fn test_new_block_filter_succeeds() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// eth_uninstallFilter
+// ============================================================================
+
+#[tokio::test]
+async fn test_uninstall_filter_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let filter = Filter::new();
+    let robust_filter_id = robust.new_filter(&filter).await?;
+    let alloy_filter_id = alloy_provider.new_filter(&filter).await?;
+
+    let robust_result = robust.uninstall_filter(robust_filter_id).await?;
+    let alloy_result = alloy_provider.uninstall_filter(alloy_filter_id).await?;
+
+    assert!(robust_result);
+    assert_eq!(robust_result, alloy_result);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_uninstall_filter_returns_false_for_invalid_id() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let invalid_filter_id = U256::from(999999);
+
+    let robust_result = robust.uninstall_filter(invalid_filter_id).await?;
+    let alloy_result = alloy_provider.uninstall_filter(invalid_filter_id).await?;
+
+    assert!(!robust_result);
+    assert_eq!(robust_result, alloy_result);
+
+    Ok(())
+}

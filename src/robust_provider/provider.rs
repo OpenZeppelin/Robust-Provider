@@ -9,11 +9,12 @@ use alloy::{
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
-    providers::{Provider, RootProvider},
+    providers::{PendingTransactionBuilder, Provider, RootProvider},
     rpc::{
         json_rpc::RpcRecv,
         types::{
             Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Filter, Log,
+            SyncStatus,
             simulate::{SimulatePayload, SimulatedBlock},
         },
     },
@@ -250,6 +251,41 @@ impl<N: Network> RobustProvider<N> {
         doc_args = [(request, "The simulation request")]
         fn simulate(request: &SimulatePayload) -> Vec<SimulatedBlock<N::BlockResponse>>
     );
+
+    robust_rpc!(fn syncing() -> SyncStatus);
+
+    robust_rpc!(
+        doc_args = [(id, "The filter ID to uninstall.")]
+        fn uninstall_filter(id: U256) -> bool
+    );
+
+    robust_rpc!(
+        doc_args = [(encoded_tx, "The RLP-encoded signed transaction bytes")]
+        fn send_raw_transaction(encoded_tx: &[u8]) -> PendingTransactionBuilder<N>
+    );
+
+    /// Cancels a subscription given the subscription ID.
+    ///
+    /// This is a wrapper function for [`Provider::unsubscribe`].
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The subscription ID to cancel.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn unsubscribe(&self, id: B256) -> Result<(), Error> {
+        self.try_operation_with_failover(
+            move |provider| async move { provider.unsubscribe(id) },
+            true,
+        )
+        .await?;
+        Ok(())
+    }
 
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///

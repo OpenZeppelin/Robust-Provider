@@ -255,3 +255,32 @@ async fn test_sign_transaction_succeeds() -> anyhow::Result<()> {
     assert_eq!(robust_signed, alloy_signed);
     Ok(())
 }
+
+// ============================================================================
+// eth_sendRawTransaction
+// ============================================================================
+
+#[tokio::test]
+async fn test_send_raw_transaction_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let from = accounts[0];
+
+    let tx = TransactionRequest::default()
+        .with_from(from)
+        .with_to(from)
+        .with_nonce(0)
+        .with_gas_limit(1)
+        .with_max_fee_per_gas(1)
+        .with_max_priority_fee_per_gas(1);
+
+    let signed_tx = alloy_provider.sign_transaction(tx).await?;
+
+    let robust_tx_hash = robust.send_raw_transaction(&signed_tx).await?;
+    let alloy_pending =
+        alloy_provider.get_transaction_by_hash(robust_tx_hash.tx_hash().to_owned()).await?;
+
+    assert!(alloy_pending.is_some());
+    Ok(())
+}
