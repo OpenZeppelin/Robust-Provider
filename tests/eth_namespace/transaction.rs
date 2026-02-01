@@ -271,9 +271,9 @@ async fn test_send_raw_transaction_succeeds() -> anyhow::Result<()> {
         .with_from(from)
         .with_to(from)
         .with_nonce(0)
-        .with_gas_limit(1)
-        .with_max_fee_per_gas(1)
-        .with_max_priority_fee_per_gas(1);
+        .with_gas_limit(21000)
+        .with_max_fee_per_gas(1_000_000_000)
+        .with_max_priority_fee_per_gas(1_000_000_000);
 
     let signed_tx = alloy_provider.sign_transaction(tx).await?;
 
