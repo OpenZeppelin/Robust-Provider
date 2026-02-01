@@ -205,6 +205,11 @@ impl<N: Network> RobustSubscription<N> {
     pub fn into_stream(self) -> RobustSubscriptionStream<N> {
         RobustSubscriptionStream::from(self)
     }
+
+    /// Allows access to the underlying alloy subscription
+    pub fn inner(&self) -> &Subscription<N::HeaderResponse> {
+        &self.subscription
+    }
 }
 
 type SubscriptionResult<N> = (Result<<N as Network>::HeaderResponse, Error>, RobustSubscription<N>);

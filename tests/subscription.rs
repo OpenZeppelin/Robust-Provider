@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use alloy::{
     network::Ethereum,
     node_bindings::Anvil,
+    primitives::keccak256,
     providers::{ProviderBuilder, RootProvider, ext::AnvilApi},
 };
 use common::{BUFFER_TIME, RECONNECT_INTERVAL, SHORT_TIMEOUT, spawn_ws_anvil};
@@ -795,6 +796,52 @@ async fn test_subscribe_succeeds_if_primary_provider_lacks_pubsub_but_fallback_s
 
     let result = robust.subscribe_blocks().await;
     assert!(result.is_ok());
+
+    Ok(())
+}
+
+// ============================================================================
+// Unsubscribe Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_unsubscribe_cancels_subscription() -> anyhow::Result<()> {
+    let (_anvil, provider) = spawn_ws_anvil().await?;
+
+    let robust = RobustProviderBuilder::fragile(provider.clone())
+        .subscription_timeout(SHORT_TIMEOUT)
+        .build()
+        .await?;
+
+    let subscription = robust.subscribe_blocks().await?;
+
+    let sub_id = subscription.inner().local_id();
+
+    robust.unsubscribe(sub_id.to_owned()).await?;
+
+    let mut stream = subscription.into_stream();
+
+    assert!(stream.next().await.is_none());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_unsubscribe_does_not_cancel_if_invalid() -> anyhow::Result<()> {
+    let (_anvil, provider) = spawn_ws_anvil().await?;
+
+    let robust = RobustProviderBuilder::fragile(provider.clone())
+        .subscription_timeout(SHORT_TIMEOUT)
+        .build()
+        .await?;
+
+    let subscription = robust.subscribe_blocks().await?;
+
+    robust.unsubscribe(keccak256("random_id")).await?;
+
+    let mut stream = subscription.into_stream();
+
+    assert!(stream.next().await.is_none());
 
     Ok(())
 }
