@@ -12,7 +12,10 @@ use alloy::{
     providers::{Provider, RootProvider},
     rpc::{
         json_rpc::RpcRecv,
-        types::{Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Filter, Log},
+        types::{
+            Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Filter, Log,
+            simulate::{SimulatePayload, SimulatedBlock},
+        },
     },
 };
 
@@ -173,6 +176,19 @@ impl<N: Network> RobustProvider<N> {
     robust_rpc!(fn new_block_filter() -> U256);
 
     robust_rpc!(
+        doc_args = [(full, "Whether to include full transaction objects.")]
+        fn new_pending_transactions_filter(full: bool) -> U256
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (tx, "The transaction request to sign.")
+        ]
+        @clone [tx]
+        fn sign_transaction(tx: N::TransactionRequest) -> Bytes
+    );
+
+    robust_rpc!(
         doc_args = [
             (address, "The address of the account."),
             (keys, "A vector of storage keys to include in the proof.")
@@ -228,6 +244,11 @@ impl<N: Network> RobustProvider<N> {
     robust_rpc!(
         doc_args = [(block, "The block identifier (hash or number).")]
         fn get_uncle_count(block: BlockId) -> u64
+    );
+
+    robust_rpc!(
+        doc_args = [(request, "The simulation request")]
+        fn simulate(request: &SimulatePayload) -> Vec<SimulatedBlock<N::BlockResponse>>
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.

@@ -3,7 +3,10 @@ use alloy::{
     network::TransactionBuilder,
     primitives::U256,
     providers::Provider,
-    rpc::types::{Bundle, TransactionRequest},
+    rpc::types::{
+        Bundle, TransactionRequest,
+        simulate::{SimBlock, SimulatePayload},
+    },
 };
 
 // ============================================================================
@@ -98,6 +101,35 @@ async fn test_estimate_gas_succeeds() -> anyhow::Result<()> {
     let alloy_gas = alloy_provider.estimate_gas(tx).await?;
 
     assert_eq!(robust_gas, alloy_gas);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_simulateV1
+// ============================================================================
+
+#[tokio::test]
+async fn test_simulate_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let get_count_call = counter.getCount();
+    let tx = TransactionRequest::default()
+        .with_to(*counter.address())
+        .with_input(get_count_call.calldata().clone());
+
+    let sim_block = SimBlock { calls: vec![tx], ..Default::default() };
+    let request = SimulatePayload {
+        block_state_calls: vec![sim_block],
+        trace_transfers: false,
+        validation: true,
+        return_full_transactions: false,
+    };
+
+    let robust_result = robust.simulate(&request).await?;
+    let alloy_result = alloy_provider.simulate(&request).await?;
+
+    assert_eq!(robust_result.first().unwrap().inner, alloy_result.first().unwrap().inner);
 
     Ok(())
 }
