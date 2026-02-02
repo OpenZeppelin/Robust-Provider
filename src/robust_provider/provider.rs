@@ -264,29 +264,6 @@ impl<N: Network> RobustProvider<N> {
         fn send_raw_transaction(encoded_tx: &[u8]) -> PendingTransactionBuilder<N>
     );
 
-    /// Cancels a subscription given the subscription ID.
-    ///
-    /// This is a wrapper function for [`Provider::unsubscribe`].
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The subscription ID to cancel.
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn unsubscribe(&self, id: B256) -> Result<(), Error> {
-        self.try_operation_with_failover(
-            move |provider| async move { provider.unsubscribe(id) },
-            true,
-        )
-        .await?;
-        Ok(())
-    }
-
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
     /// Returns a `RobustSubscription` that automatically:
