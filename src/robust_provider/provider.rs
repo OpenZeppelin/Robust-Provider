@@ -339,10 +339,10 @@ impl<N: Network> RobustProvider<N> {
                 "Starting HTTP polling subscription on primary provider"
             );
 
-            let http_sub = HttpPollingSubscription::new(
-                self.primary_provider.clone(),
-                config.clone(),
-            );
+            let http_sub =
+                HttpPollingSubscription::new(self.primary_provider.clone(), config.clone())
+                    .await
+                    .map_err(|_| Error::Timeout)?;
 
             return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
         }

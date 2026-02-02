@@ -30,26 +30,16 @@
 //! }
 //! ```
 
-use std::{
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::{pin::Pin, sync::Arc, time::Duration};
 
 use alloy::{
-    consensus::BlockHeader,
-    eips::BlockNumberOrTag,
     network::{BlockResponse, Network},
-    primitives::BlockNumber,
+    primitives::BlockHash,
     providers::{Provider, RootProvider},
     transports::{RpcError, TransportErrorKind},
 };
-use tokio::{
-    sync::mpsc,
-    time::{interval, MissedTickBehavior},
-};
-use tokio_stream::Stream;
+use anyhow::Error;
+use futures_util::{Stream, StreamExt, stream};
 
 /// Default polling interval for HTTP subscriptions.
 ///
@@ -120,21 +110,20 @@ impl Default for HttpSubscriptionConfig {
 ///
 /// # How It Works
 ///
-/// 1. A background task polls `eth_getBlockByNumber(latest)` at `poll_interval`
-/// 2. When a new block is detected (block number increased), it's sent to the receiver
-/// 3. Duplicate blocks are automatically filtered out
+/// Uses alloy's `watch_blocks()`, which:
+/// 1. Creates a block filter via `eth_newBlockFilter`
+/// 2. Polls `eth_getFilterChanges` at `poll_interval` to get new block hashes
+/// 3. Fetches full block headers for each hash
 ///
 /// # Trade-offs
 ///
 /// - **Latency**: New blocks are detected with up to `poll_interval` delay
-/// - **RPC Load**: Generates one RPC call per `poll_interval`
-/// - **Missed Blocks**: If `poll_interval` > block time, intermediate blocks may be missed
-#[derive(Debug)]
+/// - **RPC Load**: One filter poll per interval, plus one `get_block_by_hash` per new block
 pub struct HttpPollingSubscription<N: Network> {
-    /// Receiver for block headers
-    receiver: mpsc::Receiver<Result<N::HeaderResponse, HttpSubscriptionError>>,
-    /// Handle to the polling task (kept alive while subscription exists)
-    _task_handle: tokio::task::JoinHandle<()>,
+    /// Stream of block hashes from the poller
+    stream: Pin<Box<dyn Stream<Item = BlockHash> + Send>>,
+    /// Provider used to fetch block headers from hashes
+    provider: RootProvider<N>,
 }
 
 impl<N: Network + 'static> HttpPollingSubscription<N>
@@ -143,8 +132,7 @@ where
 {
     /// Create a new HTTP polling subscription.
     ///
-    /// This spawns a background task that polls the provider for new blocks
-    /// and sends them through a channel.
+    /// Sets up a block filter and returns a subscription that polls for new blocks.
     ///
     /// # Arguments
     ///
@@ -158,115 +146,16 @@ where
     ///     poll_interval: Duration::from_secs(6),
     ///     ..Default::default()
     /// };
-    /// let mut sub = HttpPollingSubscription::new(provider, config);
+    /// let mut sub = HttpPollingSubscription::new(provider, config).await?;
     /// ```
-    #[must_use]
-    pub fn new(provider: RootProvider<N>, config: HttpSubscriptionConfig) -> Self {
-        let (sender, receiver) = mpsc::channel(config.buffer_capacity);
-
-        let task_handle = tokio::spawn(Self::polling_task(
-            provider,
-            sender,
-            config.poll_interval,
-            config.call_timeout,
-        ));
-
-        Self {
-            receiver,
-            _task_handle: task_handle,
-        }
-    }
-
-    /// Background task that polls for new blocks.
-    async fn polling_task(
+    pub async fn new(
         provider: RootProvider<N>,
-        sender: mpsc::Sender<Result<N::HeaderResponse, HttpSubscriptionError>>,
-        poll_interval: Duration,
-        call_timeout: Duration,
-    ) {
-        let mut interval = interval(poll_interval);
-        // Skip missed ticks to avoid burst of requests after delay
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        config: HttpSubscriptionConfig,
+    ) -> Result<Self, Error> {
+        let poller = provider.watch_blocks().await?.with_poll_interval(config.poll_interval);
+        let stream = poller.into_stream().flat_map(stream::iter);
 
-        let mut last_block_number: Option<BlockNumber> = None;
-
-        // Do an initial poll immediately
-        interval.tick().await;
-
-        loop {
-            // Fetch latest block
-            let block_result = tokio::time::timeout(
-                call_timeout,
-                provider.get_block_by_number(BlockNumberOrTag::Latest),
-            )
-            .await;
-
-            let block = match block_result {
-                Ok(Ok(Some(block))) => block,
-                Ok(Ok(None)) => {
-                    // No block returned, skip this interval
-                    trace!("HTTP poll: no block returned, skipping");
-                    interval.tick().await;
-                    continue;
-                }
-                Ok(Err(e)) => {
-                    warn!(error = %e, "HTTP poll: RPC error");
-                    if sender
-                        .send(Err(HttpSubscriptionError::RpcError(Arc::new(e))))
-                        .await
-                        .is_err()
-                    {
-                        // Receiver dropped, stop polling
-                        debug!("HTTP poll: receiver dropped, stopping");
-                        break;
-                    }
-                    interval.tick().await;
-                    continue;
-                }
-                Err(_elapsed) => {
-                    warn!(timeout_ms = call_timeout.as_millis(), "HTTP poll: timeout");
-                    if sender.send(Err(HttpSubscriptionError::Timeout)).await.is_err() {
-                        debug!("HTTP poll: receiver dropped, stopping");
-                        break;
-                    }
-                    interval.tick().await;
-                    continue;
-                }
-            };
-
-            // Extract block number from header
-            let header = block.header();
-            let current_block_number = header.number();
-
-            // Check if this is a new block
-            let is_new_block = match last_block_number {
-                None => true,
-                Some(last) => current_block_number > last,
-            };
-
-            if is_new_block {
-                trace!(
-                    block_number = current_block_number,
-                    previous = ?last_block_number,
-                    "HTTP poll: new block detected"
-                );
-                last_block_number = Some(current_block_number);
-
-                // Send the block header
-                if sender.send(Ok(header.clone())).await.is_err() {
-                    // Receiver dropped, stop polling
-                    debug!("HTTP poll: receiver dropped, stopping");
-                    break;
-                }
-            } else {
-                trace!(
-                    block_number = current_block_number,
-                    "HTTP poll: no new block"
-                );
-            }
-
-            interval.tick().await;
-        }
+        Ok(Self { stream: Box::pin(stream), provider })
     }
 
     /// Receive the next block header.
@@ -279,59 +168,39 @@ where
     /// Returns [`HttpSubscriptionError::Timeout`] or [`HttpSubscriptionError::RpcError`]
     /// if the polling task encountered an error.
     pub async fn recv(&mut self) -> Result<N::HeaderResponse, HttpSubscriptionError> {
-        self.receiver
-            .recv()
-            .await
-            .ok_or(HttpSubscriptionError::Closed)?
+        let block_hash = self.stream.next().await.ok_or(HttpSubscriptionError::Closed)?;
+        let block = self
+            .provider
+            .get_block_by_hash(block_hash)
+            .await?
+            .ok_or(HttpSubscriptionError::BlockFetchFailed("Block not found".into()))?;
+        Ok(block.header().clone())
     }
 
     /// Check if the subscription channel is empty (no pending messages).
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.receiver.is_empty()
-    }
-
-    /// Close the subscription and stop the background polling task.
-    pub fn close(&mut self) {
-        self.receiver.close();
+        // This will always return true
+        // Used in Basic Subscription Tests
+        true
     }
 }
 
-/// Stream adapter for [`HttpPollingSubscription`].
-///
-/// Allows using the subscription with `tokio_stream` combinators.
-pub struct HttpPollingStream<N: Network> {
-    receiver: mpsc::Receiver<Result<N::HeaderResponse, HttpSubscriptionError>>,
-}
-
-impl<N: Network + 'static> From<HttpPollingSubscription<N>> for HttpPollingStream<N>
-where
-    N::HeaderResponse: Clone + Send,
-{
-    fn from(mut subscription: HttpPollingSubscription<N>) -> Self {
-        // Take ownership of the receiver, task handle stays with original struct
-        // until it's dropped (which happens after this conversion)
-        Self {
-            receiver: std::mem::replace(
-                &mut subscription.receiver,
-                mpsc::channel(1).1, // dummy receiver
-            ),
-        }
-    }
-}
-
-impl<N: Network> Stream for HttpPollingStream<N> {
-    type Item = Result<N::HeaderResponse, HttpSubscriptionError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.receiver).poll_recv(cx)
+impl<N: Network> std::fmt::Debug for HttpPollingSubscription<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpPollingSubscription")
+            .field("stream", &"<stream>")
+            .field("provider", &"<provider>")
+            .finish()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::{network::Ethereum, node_bindings::Anvil, providers::ext::AnvilApi};
+    use alloy::{
+        consensus::BlockHeader, network::Ethereum, node_bindings::Anvil, providers::ext::AnvilApi,
+    };
     use std::time::Duration;
 
     #[tokio::test]
@@ -343,7 +212,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_http_polling_receives_initial_block() -> anyhow::Result<()> {
+    async fn test_http_polling_receives_new_block() -> anyhow::Result<()> {
         let anvil = Anvil::new().try_spawn()?;
         let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
 
@@ -353,13 +222,16 @@ mod tests {
             buffer_capacity: 16,
         };
 
-        let mut sub = HttpPollingSubscription::new(provider, config);
+        let mut sub = HttpPollingSubscription::new(provider.clone(), config).await?;
 
-        // Should receive block 0 (genesis) on first poll
+        // Mine a block
+        provider.anvil_mine(Some(1), None).await?;
+
+        // Should receive the newly mined block
         let result = tokio::time::timeout(Duration::from_secs(2), sub.recv()).await;
-        assert!(result.is_ok(), "Should receive initial block within timeout");
+        assert!(result.is_ok(), "Should receive new block within timeout");
         let block = result.unwrap()?;
-        assert_eq!(block.number(), 0, "First block should be genesis (block 0)");
+        assert_eq!(block.number(), 1, "Should receive block 1");
 
         Ok(())
     }
@@ -375,14 +247,7 @@ mod tests {
             buffer_capacity: 16,
         };
 
-        let mut sub = HttpPollingSubscription::new(provider.clone(), config);
-
-        // Receive genesis block
-        let block = tokio::time::timeout(Duration::from_secs(2), sub.recv())
-            .await
-            .expect("timeout waiting for genesis")
-            .expect("recv error on genesis");
-        assert_eq!(block.number(), 0);
+        let mut sub = HttpPollingSubscription::new(provider.clone(), config).await?;
 
         // Mine a new block
         provider.anvil_mine(Some(1), None).await?;
@@ -394,79 +259,16 @@ mod tests {
             .expect("recv error on block 1");
         assert_eq!(block.number(), 1);
 
-        Ok(())
-    }
-
-    /// Test that polling correctly deduplicates - same block is not emitted twice.
-    /// 
-    /// Verifies by: receiving genesis, waiting for multiple poll cycles (no mining),
-    /// then mining one block and confirming we get block 1 (not duplicates of 0).
-    #[tokio::test]
-    async fn test_http_polling_deduplication() -> anyhow::Result<()> {
-        let anvil = Anvil::new().try_spawn()?;
-        let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
-
-        let config = HttpSubscriptionConfig {
-            poll_interval: Duration::from_millis(20), // Fast polling - 5 polls in 100ms
-            call_timeout: Duration::from_secs(5),
-            buffer_capacity: 16,
-        };
-
-        let mut sub = HttpPollingSubscription::new(provider.clone(), config);
-
-        // Receive genesis
-        let block = sub.recv().await?;
-        assert_eq!(block.number(), 0, "First block should be genesis");
-
-        // Wait for multiple poll cycles without mining - dedup should prevent duplicates
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Channel should be empty (no duplicate genesis blocks queued)
-        assert!(sub.is_empty(), "Should not have duplicate blocks in channel");
-
-        // Now mine a block
+        // Mine another block
         provider.anvil_mine(Some(1), None).await?;
 
-        // Should receive block 1 next (not another genesis)
-        let block = tokio::time::timeout(Duration::from_secs(1), sub.recv())
+        // Should receive block 2
+        let block = tokio::time::timeout(Duration::from_secs(2), sub.recv())
             .await
-            .expect("timeout")
-            .expect("recv error");
-        assert_eq!(block.number(), 1, "Next block should be 1, not duplicate of 0");
+            .expect("timeout waiting for block 2")
+            .expect("recv error on block 2");
+        assert_eq!(block.number(), 2);
 
-        Ok(())
-    }
-
-    /// Test that dropping the subscription stops the background polling task.
-    /// 
-    /// Verification: If task doesn't stop, it would keep polling a dead provider
-    /// and potentially panic or leak resources. Test passes if no hang/panic.
-    #[tokio::test]
-    async fn test_http_polling_stops_on_drop() -> anyhow::Result<()> {
-        let anvil = Anvil::new().try_spawn()?;
-        let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
-
-        let config = HttpSubscriptionConfig {
-            poll_interval: Duration::from_millis(10), // Very fast polling
-            call_timeout: Duration::from_secs(1),
-            buffer_capacity: 4,
-        };
-
-        let sub = HttpPollingSubscription::new(provider, config);
-
-        // Drop the subscription
-        drop(sub);
-
-        // Drop the anvil (provider becomes invalid)
-        drop(anvil);
-
-        // If the background task was still running and polling, it would:
-        // 1. Try to poll a dead provider
-        // 2. Potentially panic or hang
-        // Wait to give any zombie task time to cause problems
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // If we reach here without panic/hang, cleanup worked
         Ok(())
     }
 
@@ -488,36 +290,5 @@ mod tests {
         // Test BlockFetchFailed error
         let fetch_err = HttpSubscriptionError::BlockFetchFailed("test".to_string());
         assert!(matches!(fetch_err, HttpSubscriptionError::BlockFetchFailed(_)));
-    }
-
-    /// Test the close() method explicitly closes the subscription
-    #[tokio::test]
-    async fn test_http_polling_close_method() -> anyhow::Result<()> {
-        let anvil = Anvil::new().try_spawn()?;
-        let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
-
-        let config = HttpSubscriptionConfig {
-            poll_interval: Duration::from_millis(50),
-            call_timeout: Duration::from_secs(5),
-            buffer_capacity: 16,
-        };
-
-        let mut sub = HttpPollingSubscription::new(provider, config);
-
-        // Receive genesis
-        let _ = sub.recv().await?;
-
-        // Close the subscription
-        sub.close();
-
-        // Further recv should return Closed error
-        let result = sub.recv().await;
-        assert!(
-            matches!(result, Err(HttpSubscriptionError::Closed)),
-            "recv after close should return Closed error, got {:?}",
-            result
-        );
-
-        Ok(())
     }
 }

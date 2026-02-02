@@ -57,14 +57,7 @@ async fn test_http_subscription_basic_flow() -> anyhow::Result<()> {
 
     let mut subscription = robust.subscribe_blocks().await?;
 
-    // Should receive genesis block (block 0)
-    let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
-        .await
-        .expect("timeout waiting for genesis")
-        .expect("recv error");
-    assert_eq!(block.number, 0, "First block should be genesis");
-
-    // Mine a new block
+    // Mine a block
     provider.anvil_mine(Some(1), None).await?;
 
     // Should receive block 1
@@ -72,7 +65,17 @@ async fn test_http_subscription_basic_flow() -> anyhow::Result<()> {
         .await
         .expect("timeout waiting for block 1")
         .expect("recv error");
-    assert_eq!(block.number, 1, "Second block should be block 1");
+    assert_eq!(block.number, 1, "Should receive block 1");
+
+    // Mine another block
+    provider.anvil_mine(Some(1), None).await?;
+
+    // Should receive block 2
+    let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout waiting for block 2")
+        .expect("recv error");
+    assert_eq!(block.number, 2, "Should receive block 2");
 
     Ok(())
 }
@@ -90,10 +93,6 @@ async fn test_http_subscription_multiple_blocks() -> anyhow::Result<()> {
         .await?;
 
     let mut subscription = robust.subscribe_blocks().await?;
-
-    // Receive genesis
-    let block = subscription.recv().await?;
-    assert_eq!(block.number, 0);
 
     // Mine and receive 5 blocks sequentially
     for expected_block in 1..=5 {
@@ -123,14 +122,6 @@ async fn test_http_subscription_as_stream() -> anyhow::Result<()> {
     let subscription = robust.subscribe_blocks().await?;
     let mut stream = subscription.into_stream();
 
-    // Get genesis via stream
-    let block = tokio::time::timeout(Duration::from_secs(2), stream.next())
-        .await
-        .expect("timeout")
-        .expect("stream ended unexpectedly")
-        .expect("recv error");
-    assert_eq!(block.number, 0);
-
     // Mine and receive via stream
     provider.anvil_mine(Some(1), None).await?;
     let block = tokio::time::timeout(Duration::from_secs(2), stream.next())
@@ -139,6 +130,15 @@ async fn test_http_subscription_as_stream() -> anyhow::Result<()> {
         .expect("stream ended unexpectedly")
         .expect("recv error");
     assert_eq!(block.number, 1);
+
+    // Mine another and receive via stream
+    provider.anvil_mine(Some(1), None).await?;
+    let block = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("timeout")
+        .expect("stream ended unexpectedly")
+        .expect("recv error");
+    assert_eq!(block.number, 2);
 
     Ok(())
 }
@@ -210,9 +210,13 @@ async fn test_failover_http_to_ws_on_provider_death() -> anyhow::Result<()> {
 
     let mut subscription = robust.subscribe_blocks().await?;
 
-    // Receive genesis from HTTP
-    let block = subscription.recv().await?;
-    assert_eq!(block.number, 0, "Should start on HTTP primary");
+    // Mine and receive from HTTP
+    http_provider.anvil_mine(Some(1), None).await?;
+    let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    assert_eq!(block.number, 1, "Should start on HTTP primary");
 
     // Kill HTTP provider
     drop(anvil_http);
@@ -257,13 +261,20 @@ async fn test_http_only_provider_chain() -> anyhow::Result<()> {
 
     let mut subscription = robust.subscribe_blocks().await?;
 
-    // Should work with HTTP polling
-    let block = subscription.recv().await?;
-    assert_eq!(block.number, 0);
+    // Mine and receive
+    http1.anvil_mine(Some(1), None).await?;
+    let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    assert_eq!(block.number, 1);
 
     http1.anvil_mine(Some(1), None).await?;
-    let block = subscription.recv().await?;
-    assert_eq!(block.number, 1);
+    let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    assert_eq!(block.number, 2);
 
     Ok(())
 }
@@ -333,15 +344,22 @@ async fn test_poll_interval_is_respected() -> anyhow::Result<()> {
 
     let mut subscription = robust.subscribe_blocks().await?;
 
-    // Receive genesis (immediate)
-    let _ = subscription.recv().await?;
+    // Mine first block and receive it
+    provider.anvil_mine(Some(1), None).await?;
+    let _ = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
 
-    // Mine a block
+    // Mine another block
     provider.anvil_mine(Some(1), None).await?;
 
     // Measure how long it takes to receive the next block
     let start = std::time::Instant::now();
-    let _ = subscription.recv().await?;
+    let _ = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
     let elapsed = start.elapsed();
 
     // Should take at least half the poll interval
@@ -375,11 +393,7 @@ async fn test_http_subscription_survives_temporary_errors() -> anyhow::Result<()
 
     let mut subscription = robust.subscribe_blocks().await?;
 
-    // Receive genesis
-    let block = subscription.recv().await?;
-    assert_eq!(block.number, 0);
-
-    // Mine blocks - subscription should continue working
+    // Mine blocks - subscription should work
     for i in 1..=3 {
         provider.anvil_mine(Some(1), None).await?;
         let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
@@ -406,15 +420,19 @@ async fn test_all_providers_fail_returns_error() -> anyhow::Result<()> {
 
     let mut subscription = robust.subscribe_blocks().await?;
 
-    // Receive genesis
-    let _ = subscription.recv().await?;
+    // Mine and receive a block first
+    provider.anvil_mine(Some(1), None).await?;
+    let _ = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
 
     // Kill the only provider
     drop(anvil);
 
     // Next recv should eventually error (after timeout)
     let result = tokio::time::timeout(Duration::from_secs(5), subscription.recv()).await;
-    
+
     match result {
         Ok(Ok(_)) => panic!("Should not receive block from dead provider"),
         Ok(Err(e)) => {
@@ -450,22 +468,26 @@ async fn test_http_polling_deduplication() -> anyhow::Result<()> {
 
     let mut subscription = robust.subscribe_blocks().await?;
 
-    // Receive genesis
-    let block = subscription.recv().await?;
-    assert_eq!(block.number, 0);
+    // Mine first block
+    provider.anvil_mine(Some(1), None).await?;
+    let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    assert_eq!(block.number, 1);
 
     // Wait for multiple poll cycles without mining
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Now mine ONE block
+    // Now mine ONE more block
     provider.anvil_mine(Some(1), None).await?;
 
-    // Should receive exactly block 1 (not multiple copies of block 0)
+    // Should receive exactly block 2 (not duplicate of block 1)
     let block = tokio::time::timeout(Duration::from_secs(1), subscription.recv())
         .await
         .expect("timeout")
         .expect("recv error");
-    assert_eq!(block.number, 1, "Should receive block 1, not duplicate of 0");
+    assert_eq!(block.number, 2, "Should receive block 2, not duplicate of 1");
 
     Ok(())
 }
