@@ -1,5 +1,8 @@
 use crate::common::{setup_anvil, setup_anvil_with_contract};
-use alloy::{eips::BlockNumberOrTag, primitives::B256, providers::Provider};
+use alloy::{
+    eips::BlockNumberOrTag, network::TransactionBuilder, primitives::B256, providers::Provider,
+    rpc::types::TransactionRequest,
+};
 
 // ============================================================================
 // eth_getTransactionByBlockHashAndIndex
@@ -194,5 +197,90 @@ async fn test_get_transaction_receipt_not_found() -> anyhow::Result<()> {
     assert!(robust_receipt.is_none());
     assert_eq!(robust_receipt, alloy_receipt);
 
+    Ok(())
+}
+
+// ============================================================================
+// eth_newPendingTransactionFilter
+// ============================================================================
+
+#[tokio::test]
+async fn test_new_pending_transactions_filter_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let robust_filter_id = robust.new_pending_transactions_filter(false).await?;
+    let alloy_filter_id = alloy_provider.new_pending_transactions_filter(false).await?;
+
+    let robust_changes: Vec<B256> = robust.get_filter_changes(robust_filter_id).await?;
+    let alloy_changes: Vec<B256> = alloy_provider.get_filter_changes(alloy_filter_id).await?;
+
+    assert!(robust_changes.is_empty());
+    assert!(alloy_changes.is_empty());
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let robust_changes: Vec<B256> = robust.get_filter_changes(robust_filter_id).await?;
+    let alloy_changes: Vec<B256> = alloy_provider.get_filter_changes(alloy_filter_id).await?;
+
+    assert_eq!(robust_changes.first().unwrap(), alloy_changes.first().unwrap());
+    assert_eq!(robust_changes.len(), 1);
+    assert_eq!(alloy_changes.len(), 1);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_signTransaction
+// ============================================================================
+
+#[tokio::test]
+async fn test_sign_transaction_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let from = accounts[0];
+
+    let tx = TransactionRequest::default()
+        .with_from(from)
+        .with_to(from)
+        .with_nonce(0)
+        .with_gas_limit(1)
+        .with_max_fee_per_gas(1)
+        .with_max_priority_fee_per_gas(1);
+
+    let robust_signed = robust.sign_transaction(tx.clone()).await?;
+    let alloy_signed = alloy_provider.sign_transaction(tx).await?;
+
+    assert!(!robust_signed.is_empty());
+    assert_eq!(robust_signed, alloy_signed);
+    Ok(())
+}
+
+// ============================================================================
+// eth_sendRawTransaction
+// ============================================================================
+
+#[tokio::test]
+async fn test_send_raw_transaction_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let from = accounts[0];
+
+    let tx = TransactionRequest::default()
+        .with_from(from)
+        .with_to(from)
+        .with_nonce(0)
+        .with_gas_limit(21000)
+        .with_max_fee_per_gas(1_000_000_000)
+        .with_max_priority_fee_per_gas(1_000_000_000);
+
+    let signed_tx = alloy_provider.sign_transaction(tx).await?;
+
+    let robust_tx_hash = robust.send_raw_transaction(&signed_tx).await?;
+    let alloy_pending =
+        alloy_provider.get_transaction_by_hash(robust_tx_hash.tx_hash().to_owned()).await?;
+
+    assert!(alloy_pending.is_some());
     Ok(())
 }
