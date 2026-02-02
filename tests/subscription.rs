@@ -841,7 +841,7 @@ async fn test_unsubscribe_does_not_cancel_if_invalid() -> anyhow::Result<()> {
 
     let mut stream = subscription.into_stream();
 
-    assert!(stream.next().await.is_none());
+    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
 
     Ok(())
 }
