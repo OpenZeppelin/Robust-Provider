@@ -255,22 +255,20 @@ impl<N: Network> RobustSubscription<N> {
         // Try HTTP polling if enabled and WebSocket not available/failed
         #[cfg(feature = "http-subscription")]
         if self.robust_provider.allow_http_subscriptions {
-            let validation = tokio::time::timeout(
-                HTTP_RECONNECT_VALIDATION_TIMEOUT,
-                primary.get_block_number(),
-            )
-            .await;
+            let validation =
+                tokio::time::timeout(HTTP_RECONNECT_VALIDATION_TIMEOUT, primary.get_block_number())
+                    .await;
 
             if matches!(validation, Ok(Ok(_))) {
-                let http_sub = HttpPollingSubscription::new(
-                    primary.clone(),
-                    self.http_config.clone(),
-                );
-                info!("Reconnected to primary provider (HTTP polling)");
-                self.backend = SubscriptionBackend::HttpPolling(http_sub);
-                self.current_fallback_index = None;
-                self.last_reconnect_attempt = None;
-                return true;
+                if let Ok(http_sub) =
+                    HttpPollingSubscription::new(primary.clone(), self.http_config.clone()).await
+                {
+                    info!("Reconnected to primary provider (HTTP polling)");
+                    self.backend = SubscriptionBackend::HttpPolling(http_sub);
+                    self.current_fallback_index = None;
+                    self.last_reconnect_attempt = None;
+                    return true;
+                }
             }
         }
 
@@ -317,17 +315,17 @@ impl<N: Network> RobustSubscription<N> {
             // Try HTTP polling if enabled
             #[cfg(feature = "http-subscription")]
             if self.robust_provider.allow_http_subscriptions {
-                let http_sub = HttpPollingSubscription::new(
-                    provider.clone(),
-                    self.http_config.clone(),
-                );
-                info!(
-                    fallback_index = idx,
-                    "Subscription switched to fallback provider (HTTP polling)"
-                );
-                self.backend = SubscriptionBackend::HttpPolling(http_sub);
-                self.current_fallback_index = Some(idx);
-                return Ok(());
+                if let Ok(http_sub) =
+                    HttpPollingSubscription::new(provider.clone(), self.http_config.clone()).await
+                {
+                    info!(
+                        fallback_index = idx,
+                        "Subscription switched to fallback provider (HTTP polling)"
+                    );
+                    self.backend = SubscriptionBackend::HttpPolling(http_sub);
+                    self.current_fallback_index = Some(idx);
+                    return Ok(());
+                }
             }
         }
 
