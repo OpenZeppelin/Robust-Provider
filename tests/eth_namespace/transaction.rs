@@ -15,13 +15,15 @@ use alloy::{
 async fn test_get_transaction_by_block_hash_and_index_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
 
+    let mine_blocks = 5;
     let _ = counter.increase().send().await?.watch().await?;
 
-    alloy_provider.anvil_mine(Some(5), None).await?;
+    // adds this redundancy to ensure transaction has been included
+    alloy_provider.anvil_mine(Some(mine_blocks), None).await?;
 
     let block_number = alloy_provider.get_block_number().await?;
     let block = alloy_provider
-        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+        .get_block_by_number(BlockNumberOrTag::Number(block_number - mine_blocks - 1))
         .await?
         .expect("block should exist");
     let block_hash = block.header.hash;
