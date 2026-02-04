@@ -17,6 +17,8 @@ async fn test_get_transaction_by_block_hash_and_index_succeeds() -> anyhow::Resu
 
     let _ = counter.increase().send().await?.watch().await?;
 
+    alloy_provider.anvil_mine(Some(5), None).await?;
+
     let block_number = alloy_provider.get_block_number().await?;
     let block = alloy_provider
         .get_block_by_number(BlockNumberOrTag::Number(block_number))
@@ -65,6 +67,8 @@ async fn test_get_transaction_by_block_number_and_index_succeeds() -> anyhow::Re
 
     let _ = counter.increase().send().await?.watch().await?;
 
+    alloy_provider.anvil_mine(Some(5), None).await?;
+
     let block_number = alloy_provider.get_block_number().await?;
 
     let robust_tx = robust
@@ -85,6 +89,8 @@ async fn test_get_transaction_by_block_number_and_index_not_found() -> anyhow::R
     let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
 
     let _ = counter.increase().send().await?.watch().await?;
+
+    alloy_provider.anvil_mine(Some(5), None).await?;
 
     let block_number = alloy_provider.get_block_number().await?;
 
@@ -147,6 +153,8 @@ async fn test_get_raw_transaction_by_hash_succeeds() -> anyhow::Result<()> {
 
     let receipt = counter.increase().send().await?.watch().await?;
 
+    alloy_provider.anvil_mine(Some(5), None).await?;
+
     let robust_raw = robust.get_raw_transaction_by_hash(receipt).await?;
     let alloy_raw = alloy_provider.get_raw_transaction_by_hash(receipt).await?;
 
@@ -180,6 +188,8 @@ async fn test_get_transaction_receipt_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
 
     let tx_hash = counter.increase().send().await?.watch().await?;
+
+    alloy_provider.anvil_mine(Some(5), None).await?;
 
     let robust_receipt = robust.get_transaction_receipt(tx_hash).await?;
     let alloy_receipt = alloy_provider.get_transaction_receipt(tx_hash).await?;
@@ -283,6 +293,9 @@ async fn test_send_raw_transaction_succeeds() -> anyhow::Result<()> {
     let signed_tx = alloy_provider.sign_transaction(tx).await?;
 
     let robust_tx_hash = robust.send_raw_transaction(&signed_tx).await?;
+
+    alloy_provider.anvil_mine(Some(5), None).await?;
+
     let alloy_pending =
         alloy_provider.get_transaction_by_hash(robust_tx_hash.tx_hash().to_owned()).await?;
 
