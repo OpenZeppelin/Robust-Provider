@@ -1,6 +1,9 @@
 use crate::common::{setup_anvil, setup_anvil_with_contract};
 use alloy::{
-    eips::BlockNumberOrTag, network::TransactionBuilder, primitives::B256, providers::Provider,
+    eips::BlockNumberOrTag,
+    network::TransactionBuilder,
+    primitives::B256,
+    providers::{Provider, ext::AnvilApi},
     rpc::types::TransactionRequest,
 };
 
@@ -108,11 +111,13 @@ async fn test_get_transaction_by_hash_succeeds() -> anyhow::Result<()> {
 
     let receipt = counter.increase().send().await?.watch().await?;
 
+    alloy_provider.anvil_mine(Some(5), None).await?;
+
     let robust_tx = robust.get_transaction_by_hash(receipt).await?;
     let alloy_tx = alloy_provider.get_transaction_by_hash(receipt).await?;
 
     assert!(robust_tx.is_some());
-    assert_eq!(robust_tx.unwrap().inner, alloy_tx.unwrap().inner);
+    assert_eq!(robust_tx, alloy_tx);
 
     Ok(())
 }
