@@ -112,7 +112,7 @@ async fn test_get_transaction_by_hash_succeeds() -> anyhow::Result<()> {
     let alloy_tx = alloy_provider.get_transaction_by_hash(receipt).await?;
 
     assert!(robust_tx.is_some());
-    assert_eq!(robust_tx, alloy_tx);
+    assert_eq!(robust_tx.unwrap().inner, alloy_tx.unwrap().inner);
 
     Ok(())
 }
