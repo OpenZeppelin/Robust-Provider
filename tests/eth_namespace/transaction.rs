@@ -67,17 +67,24 @@ async fn test_get_transaction_by_block_hash_and_index_not_found() -> anyhow::Res
 async fn test_get_transaction_by_block_number_and_index_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
 
+    let mine_blocks = 5;
     let _ = counter.increase().send().await?.watch().await?;
 
-    alloy_provider.anvil_mine(Some(5), None).await?;
+    alloy_provider.anvil_mine(Some(mine_blocks), None).await?;
 
     let block_number = alloy_provider.get_block_number().await?;
 
     let robust_tx = robust
-        .get_transaction_by_block_number_and_index(BlockNumberOrTag::Number(block_number), 0)
+        .get_transaction_by_block_number_and_index(
+            BlockNumberOrTag::Number(block_number - mine_blocks - 1),
+            0,
+        )
         .await?;
     let alloy_tx = alloy_provider
-        .get_transaction_by_block_number_and_index(BlockNumberOrTag::Number(block_number), 0)
+        .get_transaction_by_block_number_and_index(
+            BlockNumberOrTag::Number(block_number - mine_blocks - 1),
+            0,
+        )
         .await?;
 
     assert!(robust_tx.is_some());
@@ -90,17 +97,24 @@ async fn test_get_transaction_by_block_number_and_index_succeeds() -> anyhow::Re
 async fn test_get_transaction_by_block_number_and_index_not_found() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
 
+    let mine_blocks = 5;
     let _ = counter.increase().send().await?.watch().await?;
 
-    alloy_provider.anvil_mine(Some(5), None).await?;
+    alloy_provider.anvil_mine(Some(mine_blocks), None).await?;
 
     let block_number = alloy_provider.get_block_number().await?;
 
     let robust_tx = robust
-        .get_transaction_by_block_number_and_index(BlockNumberOrTag::Number(block_number), 999)
+        .get_transaction_by_block_number_and_index(
+            BlockNumberOrTag::Number(block_number - mine_blocks - 1),
+            999,
+        )
         .await?;
     let alloy_tx = alloy_provider
-        .get_transaction_by_block_number_and_index(BlockNumberOrTag::Number(block_number), 999)
+        .get_transaction_by_block_number_and_index(
+            BlockNumberOrTag::Number(block_number - mine_blocks - 1),
+            999,
+        )
         .await?;
 
     assert!(robust_tx.is_none());
