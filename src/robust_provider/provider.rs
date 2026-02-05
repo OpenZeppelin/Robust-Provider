@@ -2,11 +2,6 @@
 
 use std::{fmt::Debug, future::Future, time::Duration};
 
-use alloy::{
-    network::Network,
-    providers::{Provider, RootProvider},
-    transports::{RpcError, TransportErrorKind},
-};
 use backon::{ExponentialBuilder, Retryable};
 use tokio::time::timeout;
 
@@ -14,20 +9,21 @@ use super::errors::{CoreError, is_retryable_error};
 use alloy::{
     consensus::TrieAccount,
     eips::{BlockId, BlockNumberOrTag},
-    network::Ethereum,
+    network::{Ethereum, Network},
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
-    providers::PendingTransactionBuilder,
+    providers::{PendingTransactionBuilder, Provider, RootProvider},
     rpc::{
         json_rpc::RpcRecv,
         types::{
-            Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, FillTransaction,
-            Filter, Log, SyncStatus,
+            AccountInfo, Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory,
+            FillTransaction, Filter, Log, SyncStatus,
             erc4337::TransactionConditional,
             simulate::{SimulatePayload, SimulatedBlock},
         },
     },
+    transports::{RpcError, TransportErrorKind},
 };
 
 use crate::{Error, block_not_found_doc, robust_provider::RobustSubscription};
@@ -107,6 +103,11 @@ impl<N: Network> RobustProvider<N> {
 
     robust_rpc!(fn get_gas_price() -> u128);
     robust_rpc!(fn get_max_priority_fee_per_gas() -> u128);
+
+    robust_rpc!(
+        doc_args = [(address, "The address for which to get the account info.")]
+        fn get_account_info(address: Address) -> AccountInfo
+    );
 
     robust_rpc!(
         doc_args = [(address, "The address to get the account for.")]
