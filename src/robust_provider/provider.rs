@@ -48,22 +48,27 @@ pub struct RobustProvider<N: Network = Ethereum> {
 }
 
 impl<N: Network> RobustProvider<N> {
+    #[must_use]
     pub fn primary(&self) -> &RootProvider<N> {
         &self.primary_provider
     }
 
+    #[must_use]
     pub fn fallback_providers(&self) -> &[RootProvider<N>] {
         &self.fallback_providers
     }
 
+    #[must_use]
     pub fn call_timeout(&self) -> Duration {
         self.call_timeout
     }
 
+    #[must_use]
     pub fn max_retries(&self) -> usize {
         self.max_retries
     }
 
+    #[must_use]
     pub fn min_delay(&self) -> Duration {
         self.min_delay
     }
@@ -319,90 +324,86 @@ impl<N: Network> RobustProvider<N> {
     ///   returned by the last provider attempted on the last retry.
     /// * [`CoreError::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    pub fn try_operation_with_failover<T: Debug, F, Fut>(
+    pub async fn try_operation_with_failover<T: Debug, F, Fut>(
         &self,
         operation: F,
         require_pubsub: bool,
-    ) -> impl Future<Output = Result<T, CoreError>>
+    ) -> Result<T, CoreError>
     where
         F: Fn(RootProvider<N>) -> Fut,
         Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
     {
-        async move {
-            let primary = self.primary();
+        let primary = self.primary();
 
-            match self.try_provider_with_timeout(primary, &operation).await {
-                Ok(value) => Ok(value),
-                Err(last_error) => self
-                    .try_fallback_providers_from(&operation, require_pubsub, last_error, 0)
-                    .await
-                    .map(|(value, _)| value),
-            }
+        match self.try_provider_with_timeout(primary, &operation).await {
+            Ok(value) => Ok(value),
+            Err(last_error) => self
+                .try_fallback_providers_from(&operation, require_pubsub, last_error, 0)
+                .await
+                .map(|(value, _)| value),
         }
     }
 
     /// Try fallback providers starting from a specific index.
-    pub(crate) fn try_fallback_providers_from<T: Debug, F, Fut>(
+    pub(crate) async fn try_fallback_providers_from<T: Debug, F, Fut>(
         &self,
         operation: F,
         require_pubsub: bool,
         mut last_error: CoreError,
         start_index: usize,
-    ) -> impl Future<Output = Result<(T, usize), CoreError>>
+    ) -> Result<(T, usize), CoreError>
     where
         F: Fn(RootProvider<N>) -> Fut,
         Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
     {
-        async move {
-            let fallback_providers = self.fallback_providers();
+        let fallback_providers = self.fallback_providers();
 
-            debug!(
-                start_index = start_index,
-                total_fallbacks = fallback_providers.len(),
-                require_pubsub = require_pubsub,
-                "Primary provider failed, attempting fallback providers"
-            );
+        debug!(
+            start_index = start_index,
+            total_fallbacks = fallback_providers.len(),
+            require_pubsub = require_pubsub,
+            "Primary provider failed, attempting fallback providers"
+        );
 
-            let fallback_iter = fallback_providers.iter().enumerate().skip(start_index);
-            for (fallback_idx, provider) in fallback_iter {
-                if require_pubsub && !Self::supports_pubsub(provider) {
-                    debug!(
-                        provider_index = fallback_idx,
-                        "Skipping fallback provider: pubsub not supported"
-                    );
-                    continue;
-                }
-
-                trace!(
-                    fallback_index = fallback_idx,
-                    total_fallbacks = fallback_providers.len(),
-                    "Attempting fallback provider"
+        let fallback_iter = fallback_providers.iter().enumerate().skip(start_index);
+        for (fallback_idx, provider) in fallback_iter {
+            if require_pubsub && !Self::supports_pubsub(provider) {
+                debug!(
+                    provider_index = fallback_idx,
+                    "Skipping fallback provider: pubsub not supported"
                 );
-
-                match self.try_provider_with_timeout(provider, &operation).await {
-                    Ok(value) => {
-                        info!(
-                            fallback_index = fallback_idx,
-                            total_fallbacks = fallback_providers.len(),
-                            "Switched to fallback provider"
-                        );
-                        return Ok((value, fallback_idx));
-                    }
-                    Err(e) => {
-                        warn!(
-                            fallback_index = fallback_idx,
-                            error = %e,
-                            "Fallback provider failed"
-                        );
-                        last_error = e;
-                    }
-                }
+                continue;
             }
 
-            error!(attempted_providers = fallback_providers.len() + 1, "All providers exhausted");
+            trace!(
+                fallback_index = fallback_idx,
+                total_fallbacks = fallback_providers.len(),
+                "Attempting fallback provider"
+            );
 
-            Err(last_error)
+            match self.try_provider_with_timeout(provider, &operation).await {
+                Ok(value) => {
+                    info!(
+                        fallback_index = fallback_idx,
+                        total_fallbacks = fallback_providers.len(),
+                        "Switched to fallback provider"
+                    );
+                    return Ok((value, fallback_idx));
+                }
+                Err(e) => {
+                    warn!(
+                        fallback_index = fallback_idx,
+                        error = %e,
+                        "Fallback provider failed"
+                    );
+                    last_error = e;
+                }
+            }
         }
+
+        error!(attempted_providers = fallback_providers.len() + 1, "All providers exhausted");
+
+        Err(last_error)
     }
 
     /// Try executing an operation with a specific provider with retry and timeout.
