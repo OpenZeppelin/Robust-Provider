@@ -265,8 +265,8 @@ async fn test_new_pending_transactions_filter_succeeds() -> anyhow::Result<()> {
 // eth_fillTransaction
 // ============================================================================
 
-// FIX: For some reason this test is failing
 #[tokio::test]
+#[ignore = "Enable once Anvil version that supports `eth_fillTransaction` is released, see https://github.com/foundry-rs/foundry/pull/12595"]
 async fn test_fill_transaction_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
