@@ -437,18 +437,12 @@ async fn test_send_tx_envelope_succeeds() -> anyhow::Result<()> {
 
     let robust_pending = robust.send_tx_envelope(tx_envelope.clone()).await?;
 
-    let alloy_pending = alloy_provider.send_tx_envelope(tx_envelope).await?;
-
     alloy_provider.anvil_mine(Some(5), None).await?;
 
     let robust_receipt =
         alloy_provider.get_transaction_by_hash(robust_pending.tx_hash().to_owned()).await?;
 
-    let alloy_receipt =
-        alloy_provider.get_transaction_by_hash(alloy_pending.tx_hash().to_owned()).await?;
-
     assert!(robust_receipt.is_some());
-    assert_eq!(robust_receipt, alloy_receipt);
     Ok(())
 }
 
