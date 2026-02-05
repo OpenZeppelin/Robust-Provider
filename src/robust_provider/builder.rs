@@ -93,6 +93,8 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
     /// while the stream buffer is full, a lagged error will be emitted, indicating
     /// that stream items were dropped due to the consumer not keeping pace with the stream.
     ///
+    /// Internally calls [`alloy::providers::GetSubscription::channel_size`].
+    ///
     /// Default is [`DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY`].
     #[must_use]
     pub fn subscription_buffer_capacity(mut self, buffer_capacity: usize) -> Self {
