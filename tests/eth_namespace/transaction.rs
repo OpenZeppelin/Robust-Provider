@@ -4,7 +4,7 @@ use alloy::{
     network::TransactionBuilder,
     primitives::{B256, U256},
     providers::{Provider, ext::AnvilApi},
-    rpc::types::TransactionRequest,
+    rpc::types::{TransactionRequest, erc4337::TransactionConditional},
 };
 
 // ============================================================================
@@ -478,6 +478,46 @@ async fn test_get_raw_transaction_by_block_hash_and_index_not_found() -> anyhow:
     assert!(robust_raw.is_none());
     assert_eq!(robust_raw, alloy_raw);
 
+    Ok(())
+}
+
+// ============================================================================
+// eth_sendRawTransactionConditional
+// ============================================================================
+
+#[tokio::test]
+#[ignore = "Anvil does not support this. This endpoint is only available on certain networks, e.g. opstack chains, polygon."]
+async fn test_send_raw_transaction_conditional_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let from = accounts[0];
+
+    let tx = TransactionRequest::default()
+        .with_from(from)
+        .with_to(from)
+        .with_nonce(0)
+        .with_gas_limit(21000)
+        .with_max_fee_per_gas(1_000_000_000)
+        .with_max_priority_fee_per_gas(1_000_000_000);
+
+    let signed_tx = alloy_provider.sign_transaction(tx).await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+    let conditional = TransactionConditional {
+        block_number_min: Some(block_number),
+        block_number_max: Some(block_number + 100),
+        ..Default::default()
+    };
+
+    let robust_tx_hash = robust.send_raw_transaction_conditional(&signed_tx, conditional).await?;
+
+    alloy_provider.anvil_mine(Some(5), None).await?;
+
+    let alloy_pending =
+        alloy_provider.get_transaction_by_hash(robust_tx_hash.tx_hash().to_owned()).await?;
+
+    assert!(alloy_pending.is_some());
     Ok(())
 }
 
