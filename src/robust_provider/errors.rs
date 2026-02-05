@@ -102,9 +102,9 @@ impl From<subscription::Error> for Error {
     fn from(err: subscription::Error) -> Self {
         match err {
             subscription::Error::RpcError(e) => Error::RpcError(e),
-            subscription::Error::Timeout |
-            subscription::Error::Closed |
-            subscription::Error::Lagged(_) => Error::Timeout,
+            subscription::Error::Timeout
+            | subscription::Error::Closed
+            | subscription::Error::Lagged(_) => Error::Timeout,
         }
     }
 }
@@ -171,14 +171,14 @@ mod geth {
             (
                 DEFAULT_ERROR_CODE,
                 // https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L39-L46
-                "invalid block range params" |
-                    "block range extends beyond current head block" |
-                    "can't specify fromBlock/toBlock with blockHash" |
-                    "pending logs are not supported" |
-                    "unknown block" |
-                    "exceed max topics" |
-                    "exceed max addresses or topics per search position" |
-                    "filter not found"
+                "invalid block range params"
+                    | "block range extends beyond current head block"
+                    | "can't specify fromBlock/toBlock with blockHash"
+                    | "pending logs are not supported"
+                    | "unknown block"
+                    | "exceed max topics"
+                    | "exceed max addresses or topics per search position"
+                    | "filter not found"
             )
         )
     }

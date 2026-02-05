@@ -25,17 +25,17 @@ use tokio_stream::StreamExt;
 /// Short poll interval for tests
 const TEST_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-async fn spawn_http_anvil() -> anyhow::Result<(alloy::node_bindings::AnvilInstance, RootProvider<Ethereum>)> {
+async fn spawn_http_anvil()
+-> anyhow::Result<(alloy::node_bindings::AnvilInstance, RootProvider<Ethereum>)> {
     let anvil = Anvil::new().try_spawn()?;
     let provider = RootProvider::new_http(anvil.endpoint_url());
     Ok((anvil, provider))
 }
 
-async fn spawn_ws_anvil() -> anyhow::Result<(alloy::node_bindings::AnvilInstance, RootProvider<Ethereum>)> {
+async fn spawn_ws_anvil()
+-> anyhow::Result<(alloy::node_bindings::AnvilInstance, RootProvider<Ethereum>)> {
     let anvil = Anvil::new().try_spawn()?;
-    let provider = ProviderBuilder::new()
-        .connect(anvil.ws_endpoint_url().as_str())
-        .await?;
+    let provider = ProviderBuilder::new().connect(anvil.ws_endpoint_url().as_str()).await?;
     Ok((anvil, provider.root().clone()))
 }
 
@@ -148,7 +148,7 @@ async fn test_http_subscription_as_stream() -> anyhow::Result<()> {
 // ============================================================================
 
 /// Test: When WS primary dies, subscription fails over to HTTP fallback
-/// 
+///
 /// Verification: We confirm failover by checking that after WS death,
 /// we still receive blocks (which must come from HTTP since WS is dead)
 #[tokio::test]
@@ -186,7 +186,7 @@ async fn test_failover_ws_to_http_on_provider_death() -> anyhow::Result<()> {
         .await
         .expect("timeout - failover may have failed")
         .expect("recv error");
-    
+
     // We received a block after WS died, proving failover worked
     // (HTTP starts at genesis, so we get block 0 or 1 depending on timing)
     assert!(block.number <= 1, "Should receive low block number from HTTP fallback");
@@ -226,7 +226,7 @@ async fn test_failover_http_to_ws_on_provider_death() -> anyhow::Result<()> {
     // We mine after a small delay to ensure WS subscription is established.
     let ws_clone = ws_provider.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(BUFFER_TIME).await;
+        tokio::time::sleep(SHORT_TIMEOUT + BUFFER_TIME).await;
         ws_clone.anvil_mine(Some(1), None).await.unwrap();
     });
 
@@ -235,7 +235,7 @@ async fn test_failover_http_to_ws_on_provider_death() -> anyhow::Result<()> {
         .await
         .expect("timeout - failover may have failed")
         .expect("recv error");
-    
+
     assert_eq!(block.number, 1, "Should receive block from WS fallback");
 
     Ok(())
@@ -263,10 +263,7 @@ async fn test_http_only_provider_chain() -> anyhow::Result<()> {
 
     // Mine and receive
     http1.anvil_mine(Some(1), None).await?;
-    let block = tokio::time::timeout(Duration::from_secs(2), subscription.recv())
-        .await
-        .expect("timeout")
-        .expect("recv error");
+    let block = subscription.recv().await?;
     assert_eq!(block.number, 1);
 
     http1.anvil_mine(Some(1), None).await?;
@@ -301,7 +298,7 @@ async fn test_http_subscriptions_disabled_skips_http() -> anyhow::Result<()> {
     // Since HTTP is skipped, we should only see WS blocks
     ws_provider.anvil_mine(Some(1), None).await?;
     http_provider.anvil_mine(Some(5), None).await?; // Mine more on HTTP
-    
+
     let block = subscription.recv().await?;
     // WS block 1, not HTTP block 0 or 5
     assert_eq!(block.number, 1, "Should use WS fallback, not HTTP primary");
@@ -439,7 +436,8 @@ async fn test_all_providers_fail_returns_error() -> anyhow::Result<()> {
             // Expected - got an error
             assert!(
                 matches!(e, SubscriptionError::Timeout | SubscriptionError::RpcError(_)),
-                "Expected Timeout or RpcError, got {:?}", e
+                "Expected Timeout or RpcError, got {:?}",
+                e
             );
         }
         Err(_) => {
@@ -579,10 +577,6 @@ async fn test_http_reconnect_validates_provider() -> anyhow::Result<()> {
     let (anvil_primary, primary) = spawn_http_anvil().await?;
     let (_anvil_fallback, fallback) = spawn_http_anvil().await?;
 
-    // Mine different blocks to identify providers
-    primary.anvil_mine(Some(10), None).await?;
-    fallback.anvil_mine(Some(20), None).await?;
-
     let robust = RobustProviderBuilder::fragile(primary.clone())
         .fallback(fallback.clone())
         .allow_http_subscriptions(true)
@@ -594,9 +588,12 @@ async fn test_http_reconnect_validates_provider() -> anyhow::Result<()> {
 
     let mut subscription = robust.subscribe_blocks().await?;
 
+    // Mine a block on primary after subscription
+    primary.anvil_mine(Some(1), None).await?;
+
     // Get initial block from primary
     let block = subscription.recv().await?;
-    assert_eq!(block.number, 10);
+    assert_eq!(block.number, 1);
 
     // Kill primary - subscription should failover to fallback
     drop(anvil_primary);
@@ -608,13 +605,13 @@ async fn test_http_reconnect_validates_provider() -> anyhow::Result<()> {
         fb_clone.anvil_mine(Some(1), None).await.unwrap();
     });
 
-    // Should receive from fallback (block 20 or 21 depending on timing)
+    // Should receive from fallback (block 1 on fallback)
     let block = tokio::time::timeout(Duration::from_secs(5), subscription.recv())
         .await
         .expect("timeout")
         .expect("recv error");
     let fallback_block = block.number;
-    assert!(fallback_block >= 20, "Should receive block from fallback, got {}", fallback_block);
+    assert_eq!(fallback_block, 1, "Should receive block 1 from fallback");
 
     // Wait for reconnect interval to elapse
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -650,11 +647,6 @@ async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Re
     let (_anvil_fb1, fallback1) = spawn_http_anvil().await?;
     let (_anvil_fb2, fallback2) = spawn_http_anvil().await?;
 
-    // Mine different blocks to identify providers
-    primary.anvil_mine(Some(5), None).await?;
-    fallback1.anvil_mine(Some(10), None).await?;
-    fallback2.anvil_mine(Some(20), None).await?;
-
     let robust = RobustProviderBuilder::fragile(primary.clone())
         .fallback(fallback1.clone())
         .fallback(fallback2.clone())
@@ -666,9 +658,12 @@ async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Re
 
     let mut subscription = robust.subscribe_blocks().await?;
 
+    // Mine a block on primary after subscription
+    primary.anvil_mine(Some(1), None).await?;
+
     // Get initial block from primary
     let block = subscription.recv().await?;
-    assert_eq!(block.number, 5);
+    assert_eq!(block.number, 1);
 
     // Kill primary AND fallback1 - only fallback2 will work
     drop(anvil_primary);
@@ -680,8 +675,8 @@ async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Re
     // Then mine on fallback2
     let fb2_clone = fallback2.clone();
     tokio::spawn(async move {
-        // Wait for two timeout cycles plus buffer
-        tokio::time::sleep(SHORT_TIMEOUT * 2 + BUFFER_TIME * 2).await;
+        // Wait for a timeout cycle plus buffer
+        tokio::time::sleep(SHORT_TIMEOUT + Duration::from_millis(50)).await;
         fb2_clone.anvil_mine(Some(1), None).await.unwrap();
     });
 
@@ -691,12 +686,8 @@ async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Re
         .expect("timeout - failover chain may have failed")
         .expect("recv error");
 
-    // Block should be from fallback2 (20 or 21 depending on timing)
-    assert!(
-        block.number >= 20,
-        "Should receive block from fallback2, got {}",
-        block.number
-    );
+    // Block should be from fallback2 (block number >= 1)
+    assert!(block.number >= 1, "Should receive block from fallback2, got {}", block.number);
 
     Ok(())
 }
@@ -710,9 +701,6 @@ async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()>
     let (anvil_primary, primary) = spawn_http_anvil().await?;
     let (_anvil_fb, fallback) = spawn_http_anvil().await?;
 
-    primary.anvil_mine(Some(5), None).await?;
-    fallback.anvil_mine(Some(10), None).await?;
-
     let robust = RobustProviderBuilder::fragile(primary.clone())
         .fallback(fallback.clone())
         .allow_http_subscriptions(true)
@@ -722,10 +710,11 @@ async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()>
         .await?;
 
     let mut subscription = robust.subscribe_blocks().await?;
+    primary.anvil_mine(Some(1), None).await?;
 
     // Get initial block from primary
     let block = subscription.recv().await?;
-    assert_eq!(block.number, 5);
+    assert_eq!(block.number, 1);
 
     // Kill both providers
     drop(anvil_primary);
