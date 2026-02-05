@@ -8,7 +8,7 @@ use tokio::time::timeout;
 use super::errors::{CoreError, is_retryable_error};
 use alloy::{
     consensus::TrieAccount,
-    eips::{BlockId, BlockNumberOrTag},
+    eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
     network::{Ethereum, Network},
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
@@ -17,8 +17,8 @@ use alloy::{
     rpc::{
         json_rpc::RpcRecv,
         types::{
-            AccountInfo, Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory,
-            FillTransaction, Filter, Log, SyncStatus,
+            AccessListResult, AccountInfo, Bundle, EIP1186AccountProofResponse, EthCallResponse,
+            FeeHistory, FillTransaction, Filter, Log, SyncStatus,
             erc4337::TransactionConditional,
             simulate::{SimulatePayload, SimulatedBlock},
         },
@@ -87,9 +87,18 @@ impl<N: Network> RobustProvider<N> {
     robust_rpc!(fn get_chain_id() -> u64);
 
     robust_rpc!(
+        doc_args = [(request, "The transaction request to create an access list for.")]
+        fn create_access_list(request: &N::TransactionRequest) -> AccessListResult
+    );
+
+    robust_rpc!(
         doc_args = [(tx, "The transaction request to estimate gas for.")]
         @clone [tx]
         fn estimate_gas(tx: N::TransactionRequest) -> u64
+    );
+
+    robust_rpc!(
+        fn estimate_eip1559_fees() -> Eip1559Estimation
     );
 
     robust_rpc!(

@@ -72,3 +72,19 @@ async fn test_get_max_priority_fee_per_gas_succeeds() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// estimate_eip1559_fees
+// ============================================================================
+
+#[tokio::test]
+async fn test_estimate_eip1559_fees_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_gas = robust.estimate_eip1559_fees().await?;
+    let alloy_gas = alloy_provider.estimate_eip1559_fees().await?;
+
+    assert_eq!(robust_gas, alloy_gas);
+
+    Ok(())
+}
