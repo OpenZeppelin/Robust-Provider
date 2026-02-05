@@ -52,6 +52,16 @@
 ///     fn method_name<T: SomeTrait>(filter_id: U256) -> Vec<T>
 /// );
 /// ```
+///
+/// ## With where clause
+/// ```ignore
+/// robust_rpc!(
+///     doc_args = [(tx, "The transaction request.")]
+///     @clone [tx]
+///     fn method_name(tx: TransactionRequest) -> ReturnType
+///     where [SomeType: SomeTrait]
+/// );
+/// ```
 macro_rules! robust_rpc {
     // Main pattern: optional doc_errors, optional doc_args, zero or more fn doc_args, optional error variant
     (
@@ -89,15 +99,20 @@ macro_rules! robust_rpc {
         }
     };
 
-    // Arguments with cloning use with @clone
+    // Arguments with cloning and optional where clause
     (
+        $(#[doc = $doc:literal])*
         $(doc_include_error = [$($error_doc:tt)+])?
         $(doc_args = [$(($arg_name:ident, $arg_desc:literal)),* $(,)?])?
         @clone [$($clone_arg:ident),+]
         fn $method:ident $(<$generic:ident: $bound:path>)? (
             $($arg:ident: $arg_ty:ty),+
-        ) -> $ret:ty $(; or $err:ident)?
+        ) -> $ret:ty
+        $(where [$($where_ty:ty: $where_bound:path),+ $(,)?])?
+        $(; or $err:ident)?
     ) => {
+        $(#[doc = $doc])*
+        ///
         #[doc = concat!("This is a wrapper function for [`Provider::", stringify!($method), "`].")]
         $($(
         ///
@@ -115,7 +130,9 @@ macro_rules! robust_rpc {
         $(
         #[doc = $($error_doc)+]
         )?
-        pub async fn $method $(<$generic: $bound>)? (&self, $($arg: $arg_ty),+) -> Result<$ret, Error> {
+        pub async fn $method $(<$generic: $bound>)? (&self, $($arg: $arg_ty),+) -> Result<$ret, Error>
+        $(where $($where_ty: $where_bound),+)?
+        {
             let result = self
                 .try_operation_with_failover(
                     move |provider| {

@@ -22,8 +22,8 @@ use alloy::{
     rpc::{
         json_rpc::RpcRecv,
         types::{
-            Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Filter, Log,
-            SyncStatus,
+            Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, FillTransaction,
+            Filter, Log, SyncStatus,
             erc4337::TransactionConditional,
             simulate::{SimulatePayload, SimulatedBlock},
         },
@@ -204,6 +204,15 @@ impl<N: Network> RobustProvider<N> {
 
     robust_rpc!(
         doc_args = [
+            (tx, "The transaction request to fill.")
+        ]
+        @clone [tx]
+        fn fill_transaction(tx: N::TransactionRequest) -> FillTransaction<N::TxEnvelope>
+        where [N::TxEnvelope: RpcRecv]
+    );
+
+    robust_rpc!(
+        doc_args = [
             (address, "The address of the account."),
             (keys, "A vector of storage keys to include in the proof.")
         ]
@@ -305,13 +314,14 @@ impl<N: Network> RobustProvider<N> {
         fn send_transaction(tx: N::TransactionRequest) -> PendingTransactionBuilder<N>
     );
 
-    // robust_rpc!(
-    //     doc_args = [
-    //         (tx, "The signed transaction envelope to send.")
-    //     ]
-    //     @clone [tx]
-    //     fn send_tx_envelope(tx: N::TxEnvelope) -> PendingTransactionBuilder<N>
-    // );
+    robust_rpc!(
+        doc_args = [
+            (tx, "The signed transaction envelope to send.")
+        ]
+        @clone [tx]
+        fn send_tx_envelope(tx: N::TxEnvelope) -> PendingTransactionBuilder<N>
+        where [N::TxEnvelope: Clone]
+    );
 
     robust_rpc!(
         doc_args = [(tx, "The transaction request to send synchronously")]
