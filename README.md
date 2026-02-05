@@ -43,7 +43,7 @@ Add `robust-provider` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-robust-provider = "0.2.0"
+robust-provider = "1.0.0"
 ```
 
 Create a robust provider with automatic retries and fallback:
@@ -211,26 +211,21 @@ The tests use local Anvil instances to verify retry logic, failover behaviour, a
 
 ---
 
-## RPC Endpoint Coverage
-
-> ⚠️ **Work In Progress** ⚠️
->
-> This library is under active development and many RPC endpoints have not been implemented yet. If you encounter a missing endpoint, see the [Extensibility](#extensibility) section below for how to make raw RPC calls.
-
----
-
 ## Extensibility
 
-The library exposes `try_operation_with_failover`, allowing you to wrap any RPC call with the full retry and failover logic, even for endpoints that haven't been explicitly implemented:
+The library exposes `try_operation_with_failover`, allowing you to wrap any custom logic with the full retry and failover logic:
 
 ```rust
 use alloy::providers::Provider;
 
-// Use try_operation_with_failover to call any RPC method with full resilience
+// Use try_operation_with_failover to call a combination of RPC methods with full resilience
 let block = robust
     .try_operation_with_failover(
-        |provider| async move { provider.get_block_by_number(0.into()).await },
-        false, 
+        |provider| async move {
+            let latest_number = provider.get_block_number().await?;
+            provider.get_block_by_number(latest_number.into()).await
+        },
+        false,
     )
     .await?;
 
