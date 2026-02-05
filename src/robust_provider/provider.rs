@@ -18,7 +18,7 @@ use alloy::{
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
-    providers::PendingTransactionBuilder,
+    providers::{FilterPollerBuilder, PendingTransactionBuilder, WatchBlocks},
     rpc::{
         json_rpc::RpcRecv,
         types::{
@@ -260,6 +260,14 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
+        doc_args = [
+            (tag, "The block identifier (hash or number)."),
+            (idx, "The uncle index position.")
+        ]
+        fn get_uncle(tag: BlockId, idx: u64) -> Option<N::BlockResponse>
+    );
+
+    robust_rpc!(
         doc_args = [(request, "The simulation request")]
         fn simulate(request: &SimulatePayload) -> Vec<SimulatedBlock<N::BlockResponse>>
     );
@@ -274,6 +282,21 @@ impl<N: Network> RobustProvider<N> {
     robust_rpc!(
         doc_args = [(encoded_tx, "The RLP-encoded signed transaction bytes")]
         fn send_raw_transaction(encoded_tx: &[u8]) -> PendingTransactionBuilder<N>
+    );
+
+    robust_rpc!(
+        fn watch_full_blocks() -> WatchBlocks<N::BlockResponse>
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (filter, "The log filter specifying which logs to watch for.")
+        ]
+        fn watch_logs(filter: &Filter) -> FilterPollerBuilder<Log>
+    );
+
+    robust_rpc!(
+        fn watch_blocks() -> FilterPollerBuilder<B256>
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.

@@ -5,6 +5,7 @@ use alloy::{
     providers::{Provider, ext::AnvilApi},
 };
 use robust_provider::Error;
+use tokio_stream::StreamExt;
 
 // ============================================================================
 // eth_getBlockByNumber
@@ -398,7 +399,6 @@ async fn test_get_uncle_count_by_block_number_succeeds() -> anyhow::Result<()> {
         let alloy_count = alloy_provider.get_uncle_count(tag).await?;
 
         assert_eq!(robust_count, alloy_count);
-        // Anvil doesn't produce uncles
         assert_eq!(robust_count, 0);
     }
 
@@ -419,8 +419,169 @@ async fn test_get_uncle_count_by_block_hash_succeeds() -> anyhow::Result<()> {
     let alloy_count = alloy_provider.get_uncle_count(BlockId::hash(block_hash)).await?;
 
     assert_eq!(robust_count, alloy_count);
-    // Anvil doesn't produce uncles
     assert_eq!(robust_count, 0);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getUncleByBlockHashAndIndex / eth_getUncleByBlockNumberAndIndex
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_uncle_by_block_number_returns_none() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    // Anvil doesn't produce uncles, so get_uncle should return None
+    let robust_uncle = robust.get_uncle(BlockId::number(5), 0).await?;
+    let alloy_uncle = alloy_provider.get_uncle(BlockId::number(5), 0).await?;
+
+    assert!(robust_uncle.is_none());
+    assert_eq!(robust_uncle, alloy_uncle);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_uncle_by_block_hash_returns_none() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(5))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    // Anvil doesn't produce uncles, so get_uncle should return None
+    let robust_uncle = robust.get_uncle(BlockId::hash(block_hash), 0).await?;
+    let alloy_uncle = alloy_provider.get_uncle(BlockId::hash(block_hash), 0).await?;
+
+    assert!(robust_uncle.is_none());
+    assert_eq!(robust_uncle, alloy_uncle);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_uncle_with_various_block_tags() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    let tags = [BlockId::latest(), BlockId::earliest(), BlockId::safe(), BlockId::finalized()];
+
+    for tag in tags {
+        let robust_uncle = robust.get_uncle(tag, 0).await?;
+        let alloy_uncle = alloy_provider.get_uncle(tag, 0).await?;
+
+        assert!(robust_uncle.is_none());
+        assert_eq!(robust_uncle, alloy_uncle);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_uncle_with_various_indices() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    for idx in [0, 1, 2, 10, 100] {
+        let robust_uncle = robust.get_uncle(BlockId::number(5), idx).await?;
+        let alloy_uncle = alloy_provider.get_uncle(BlockId::number(5), idx).await?;
+
+        assert!(robust_uncle.is_none());
+        assert_eq!(robust_uncle, alloy_uncle);
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// watch_blocks
+// ============================================================================
+
+#[tokio::test]
+async fn test_watch_blocks_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_poller = robust.watch_blocks().await?;
+    let mut stream = robust_poller.into_stream();
+
+    alloy_provider.anvil_mine(Some(3), None).await?;
+
+    let block_hashes = stream.next().await.expect("should get block hashes");
+
+    assert!(!block_hashes.is_empty());
+    for hash in &block_hashes {
+        let block = alloy_provider.get_block_by_hash(*hash).await?;
+        assert!(block.is_some());
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_watch_blocks_returns_correct_hashes() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let robust_poller = robust.watch_blocks().await?;
+    let mut stream = robust_poller.into_stream();
+
+    alloy_provider.anvil_mine(Some(1), None).await?;
+
+    let watch_hashes = stream.next().await.expect("should get block hashes");
+    assert!(!watch_hashes.is_empty());
+
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(1))
+        .await?
+        .expect("block should exist");
+
+    assert!(watch_hashes.contains(&block.header.hash));
+
+    Ok(())
+}
+
+// ============================================================================
+// watch_full_blocks
+// ============================================================================
+
+#[tokio::test]
+async fn test_watch_full_blocks_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let watch = robust.watch_full_blocks().await?;
+    let mut stream = watch.into_stream();
+
+    alloy_provider.anvil_mine(Some(2), None).await?;
+
+    let block1 = stream.next().await.expect("should get block")?;
+    let block2 = stream.next().await.expect("should get block")?;
+
+    assert_eq!(block1.header.number, 1);
+    assert_eq!(block2.header.number, 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_watch_full_blocks_with_full_transactions() -> anyhow::Result<()> {
+    let (_anvil, robust, _alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let watch = robust.watch_full_blocks().await?.full();
+    let mut stream = watch.into_stream();
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let mut found_tx = false;
+    for _ in 0..5 {
+        if let Some(Ok(block)) = stream.next().await &&
+            !block.transactions.is_empty()
+        {
+            found_tx = true;
+            break;
+        }
+    }
+
+    assert!(found_tx, "Should find a block with transactions");
 
     Ok(())
 }
