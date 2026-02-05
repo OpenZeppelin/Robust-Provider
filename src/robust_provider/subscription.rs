@@ -221,8 +221,8 @@ impl<N: Network> RobustSubscription<N> {
     /// Returns true if reconnection was successful, false if it's not time yet or if it failed.
     async fn try_reconnect_to_primary(&mut self, force: bool) -> bool {
         // Check if we should attempt reconnection
-        let should_reconnect = force ||
-            match self.last_reconnect_attempt {
+        let should_reconnect = force
+            || match self.last_reconnect_attempt {
                 None => false,
                 Some(last_attempt) => {
                     last_attempt.elapsed() >= self.robust_provider.reconnect_interval
@@ -294,13 +294,10 @@ impl<N: Network> RobustSubscription<N> {
         for (idx, provider) in fallback_providers.iter().enumerate().skip(start_index) {
             // Try WebSocket subscription first if provider supports pubsub
             if Self::supports_pubsub(provider) {
-                let operation =
-                    move |p: RootProvider<N>| async move { p.subscribe_blocks().await };
+                let operation = move |p: RootProvider<N>| async move { p.subscribe_blocks().await };
 
-                if let Ok(sub) = self
-                    .robust_provider
-                    .try_provider_with_timeout(provider, &operation)
-                    .await
+                if let Ok(sub) =
+                    self.robust_provider.try_provider_with_timeout(provider, &operation).await
                 {
                     info!(
                         fallback_index = idx,
@@ -349,8 +346,8 @@ impl<N: Network> RobustSubscription<N> {
 
     /// Check if the subscription channel is empty (no pending messages)
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        match &self.backend {
+    pub fn is_empty(&mut self) -> bool {
+        match &mut self.backend {
             SubscriptionBackend::WebSocket(sub) => sub.is_empty(),
             #[cfg(feature = "http-subscription")]
             SubscriptionBackend::HttpPolling(sub) => sub.is_empty(),

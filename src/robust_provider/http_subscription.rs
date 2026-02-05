@@ -38,8 +38,7 @@ use alloy::{
     providers::{Provider, RootProvider},
     transports::{RpcError, TransportErrorKind},
 };
-use anyhow::Error;
-use futures_util::{Stream, StreamExt, stream};
+use futures_util::{FutureExt, Stream, StreamExt, stream};
 
 /// Default polling interval for HTTP subscriptions.
 ///
@@ -124,6 +123,8 @@ pub struct HttpPollingSubscription<N: Network> {
     stream: Pin<Box<dyn Stream<Item = BlockHash> + Send>>,
     /// Provider used to fetch block headers from hashes
     provider: RootProvider<N>,
+    /// Buffer
+    buffer: Option<BlockHash>,
 }
 
 impl<N: Network + 'static> HttpPollingSubscription<N>
@@ -151,11 +152,15 @@ where
     pub async fn new(
         provider: RootProvider<N>,
         config: HttpSubscriptionConfig,
-    ) -> Result<Self, Error> {
-        let poller = provider.watch_blocks().await?.with_poll_interval(config.poll_interval);
+    ) -> Result<Self, HttpSubscriptionError> {
+        let poller = provider
+            .watch_blocks()
+            .await
+            .map_err(HttpSubscriptionError::from)?
+            .with_poll_interval(config.poll_interval);
         let stream = poller.into_stream().flat_map(stream::iter);
 
-        Ok(Self { stream: Box::pin(stream), provider })
+        Ok(Self { stream: Box::pin(stream), provider, buffer: None })
     }
 
     /// Receive the next block header.
@@ -168,7 +173,13 @@ where
     /// Returns [`HttpSubscriptionError::Timeout`] or [`HttpSubscriptionError::RpcError`]
     /// if the polling task encountered an error.
     pub async fn recv(&mut self) -> Result<N::HeaderResponse, HttpSubscriptionError> {
-        let block_hash = self.stream.next().await.ok_or(HttpSubscriptionError::Closed)?;
+        // Check buffer first, otherwise read from stream
+        let block_hash = if let Some(hash) = self.buffer.take() {
+            hash
+        } else {
+            self.stream.next().await.ok_or(HttpSubscriptionError::Closed)?
+        };
+
         let block = self
             .provider
             .get_block_by_hash(block_hash)
@@ -178,11 +189,25 @@ where
     }
 
     /// Check if the subscription channel is empty (no pending messages).
+    ///
+    /// If buffer has an item, returns `false`.
+    /// Otherwise, tries to read from stream and buffers the result.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        // This will always return true
-        // Used in Basic Subscription Tests
-        true
+    pub fn is_empty(&mut self) -> bool {
+        // If buffer already has something
+        if self.buffer.is_some() {
+            return false;
+        }
+
+        // Try to get next item
+        match self.stream.next().now_or_never() {
+            Some(Some(hash)) => {
+                self.buffer = Some(hash);
+                false
+            }
+            Some(None) => true,
+            None => true,
+        }
     }
 }
 

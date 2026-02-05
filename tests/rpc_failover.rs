@@ -122,10 +122,10 @@ async fn test_block_not_found_does_not_retry() -> anyhow::Result<()> {
         .await?;
 
     let start = Instant::now();
-    
+
     // Request future block - should be BlockNotFound, not retried
     let result = robust.get_block(alloy::eips::BlockId::number(999_999)).await;
-    
+
     let elapsed = start.elapsed();
 
     assert!(matches!(result, Err(Error::BlockNotFound)));
@@ -145,9 +145,9 @@ async fn test_operation_completes_when_provider_unavailable() -> anyhow::Result<
     let anvil = Anvil::new().try_spawn()?;
     let endpoint = anvil.endpoint_url();
     drop(anvil);
-    
+
     let provider = ProviderBuilder::new().connect_http(endpoint);
-    
+
     let robust = RobustProviderBuilder::fragile(provider)
         .call_timeout(Duration::from_secs(2))
         .build()
