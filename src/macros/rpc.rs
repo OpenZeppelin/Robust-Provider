@@ -67,6 +67,7 @@ macro_rules! robust_rpc {
     (
         $(doc_include_error = [$($error_doc:tt)+])?
         $(doc_args = [$(($arg_name:ident, $arg_desc:literal)),* $(,)?])?
+        $(doc_alias = $alias:tt)?
         fn $method:ident $(<$generic:ident: $bound:path>)? ($($($arg:ident: $arg_ty:ty),+)?) -> $ret:ty $(; or $err:ident)?
     ) => {
         #[doc = concat!("This is a wrapper function for [`Provider::", stringify!($method), "`].")]
@@ -86,6 +87,9 @@ macro_rules! robust_rpc {
         $(
         #[doc = $($error_doc)+]
         )?
+        $(
+        #[doc(alias = $alias)]
+        )?
         pub async fn $method $(<$generic: $bound>)? (&self $(, $($arg: $arg_ty),+)?) -> Result<$ret, Error> {
             let result = self
                 .try_operation_with_failover(
@@ -104,6 +108,7 @@ macro_rules! robust_rpc {
         $(#[doc = $doc:literal])*
         $(doc_include_error = [$($error_doc:tt)+])?
         $(doc_args = [$(($arg_name:ident, $arg_desc:literal)),* $(,)?])?
+        $(doc_alias = $alias:tt)?
         @clone [$($clone_arg:ident),+]
         fn $method:ident $(<$generic:ident: $bound:path>)? (
             $($arg:ident: $arg_ty:ty),+
@@ -129,6 +134,9 @@ macro_rules! robust_rpc {
         ///   `call_timeout`).
         $(
         #[doc = $($error_doc)+]
+        )?
+        $(
+        #[doc(alias = $alias)]
         )?
         pub async fn $method $(<$generic: $bound>)? (&self, $($arg: $arg_ty),+) -> Result<$ret, Error>
         $(where $($where_ty: $where_bound),+)?

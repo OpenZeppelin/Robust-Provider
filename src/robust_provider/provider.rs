@@ -363,6 +363,11 @@ impl<N: Network> RobustProvider<N> {
         fn get_raw_transaction_by_block_number_and_index(block_number: BlockNumberOrTag, index: usize) -> Option<Bytes>
     );
 
+    robust_rpc!(
+        doc_alias = "web3_client_version"
+        fn get_client_version() -> String
+    );
+
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
     /// Returns a `RobustSubscription` that automatically:
