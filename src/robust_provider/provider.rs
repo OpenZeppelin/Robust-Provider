@@ -18,12 +18,13 @@ use alloy::{
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
-    providers::{FilterPollerBuilder, PendingTransactionBuilder, WatchBlocks},
+    providers::PendingTransactionBuilder,
     rpc::{
         json_rpc::RpcRecv,
         types::{
             Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Filter, Log,
             SyncStatus,
+            erc4337::TransactionConditional,
             simulate::{SimulatePayload, SimulatedBlock},
         },
     },
@@ -285,18 +286,61 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
-        fn watch_full_blocks() -> WatchBlocks<N::BlockResponse>
+        doc_args = [(encoded_tx, "The RLP-encoded signed transaction bytes")]
+        fn send_raw_transaction_sync(encoded_tx: &[u8]) -> N::ReceiptResponse
     );
 
     robust_rpc!(
         doc_args = [
-            (filter, "The log filter specifying which logs to watch for.")
+            (encoded_tx, "The RLP-encoded signed transaction bytes"),
+            (conditional, "The transaction conditional to apply")
         ]
-        fn watch_logs(filter: &Filter) -> FilterPollerBuilder<Log>
+        @clone [conditional]
+        fn send_raw_transaction_conditional(encoded_tx: &[u8], conditional: TransactionConditional) -> PendingTransactionBuilder<N>
     );
 
     robust_rpc!(
-        fn watch_blocks() -> FilterPollerBuilder<B256>
+        doc_args = [(tx, "The transaction request to send")]
+        @clone [tx]
+        fn send_transaction(tx: N::TransactionRequest) -> PendingTransactionBuilder<N>
+    );
+
+    // robust_rpc!(
+    //     doc_args = [
+    //         (tx, "The signed transaction envelope to send.")
+    //     ]
+    //     @clone [tx]
+    //     fn send_tx_envelope(tx: N::TxEnvelope) -> PendingTransactionBuilder<N>
+    // );
+
+    robust_rpc!(
+        doc_args = [(tx, "The transaction request to send synchronously")]
+        @clone [tx]
+        fn send_transaction_sync(tx: N::TransactionRequest) -> N::ReceiptResponse
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (sender, "The sender address"),
+            (nonce, "The nonce of the transaction")
+        ]
+        fn get_transaction_by_sender_nonce(sender: Address, nonce: u64) -> Option<N::TransactionResponse>
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (block_hash, "The hash of the block"),
+            (index, "The transaction index position")
+        ]
+        fn get_raw_transaction_by_block_hash_and_index(block_hash: B256, index: usize) -> Option<Bytes>
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (block_number, "The block number or tag"),
+            (index, "The transaction index position")
+        ]
+        fn get_raw_transaction_by_block_number_and_index(block_number: BlockNumberOrTag, index: usize) -> Option<Bytes>
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.

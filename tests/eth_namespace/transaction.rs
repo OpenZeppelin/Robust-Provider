@@ -2,7 +2,7 @@ use crate::common::{setup_anvil, setup_anvil_with_contract};
 use alloy::{
     eips::BlockNumberOrTag,
     network::TransactionBuilder,
-    primitives::B256,
+    primitives::{B256, U256},
     providers::{Provider, ext::AnvilApi},
     rpc::types::TransactionRequest,
 };
@@ -316,5 +316,231 @@ async fn test_send_raw_transaction_succeeds() -> anyhow::Result<()> {
         alloy_provider.get_transaction_by_hash(robust_tx_hash.tx_hash().to_owned()).await?;
 
     assert!(alloy_pending.is_some());
+    Ok(())
+}
+
+// ============================================================================
+// eth_sendRawTransactionSync
+// ============================================================================
+
+#[tokio::test]
+async fn test_send_raw_transaction_sync_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let from = accounts[0];
+
+    let tx = TransactionRequest::default()
+        .with_from(from)
+        .with_to(from)
+        .with_nonce(0)
+        .with_gas_limit(21000)
+        .with_max_fee_per_gas(1_000_000_000)
+        .with_max_priority_fee_per_gas(1_000_000_000);
+
+    let signed_tx = alloy_provider.sign_transaction(tx).await?;
+
+    let receipt = robust.send_raw_transaction_sync(&signed_tx).await?;
+
+    assert!(receipt.status());
+    Ok(())
+}
+
+// ============================================================================
+// eth_sendTransaction
+// ============================================================================
+
+#[tokio::test]
+async fn test_send_transaction_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, _counter) = setup_anvil_with_contract().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let from = accounts[0];
+    let to = accounts[1];
+
+    let tx = TransactionRequest::default().with_from(from).with_to(to).with_value(U256::from(1000));
+
+    let robust_pending = robust.send_transaction(tx.clone()).await?;
+    let robust_receipt = robust_pending.get_receipt().await?;
+
+    assert!(robust_receipt.status());
+    Ok(())
+}
+
+// ============================================================================
+// eth_sendTransactionSync
+// ============================================================================
+
+#[tokio::test]
+async fn test_send_transaction_sync_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, _counter) = setup_anvil_with_contract().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let from = accounts[0];
+    let to = accounts[1];
+
+    let tx = TransactionRequest::default().with_from(from).with_to(to).with_value(U256::from(1000));
+
+    let receipt = robust.send_transaction_sync(tx).await?;
+
+    assert!(receipt.status());
+    Ok(())
+}
+
+// ============================================================================
+// eth_getTransactionBySenderNonce
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_transaction_by_sender_nonce_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    alloy_provider.anvil_mine(Some(5), None).await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let sender = accounts[0];
+
+    // Nonce 0 was used by the contract deployment, nonce 1 by the increase call
+    let robust_tx = robust.get_transaction_by_sender_nonce(sender, 1).await?;
+    let alloy_tx = alloy_provider.get_transaction_by_sender_nonce(sender, 1).await?;
+
+    assert!(robust_tx.is_some());
+    assert_eq!(robust_tx, alloy_tx);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_transaction_by_sender_nonce_not_found() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let accounts = alloy_provider.get_accounts().await?;
+    let sender = accounts[0];
+
+    let robust_tx = robust.get_transaction_by_sender_nonce(sender, 999).await?;
+    let alloy_tx = alloy_provider.get_transaction_by_sender_nonce(sender, 999).await?;
+
+    assert!(robust_tx.is_none());
+    assert_eq!(robust_tx, alloy_tx);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getRawTransactionByBlockHashAndIndex
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_raw_transaction_by_block_hash_and_index_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let mine_blocks = 5;
+    let _ = counter.increase().send().await?.watch().await?;
+
+    alloy_provider.anvil_mine(Some(mine_blocks), None).await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(block_number - mine_blocks - 1))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    let robust_raw = robust.get_raw_transaction_by_block_hash_and_index(block_hash, 0).await?;
+    let alloy_raw =
+        alloy_provider.get_raw_transaction_by_block_hash_and_index(block_hash, 0).await?;
+
+    assert!(robust_raw.is_some());
+    assert_eq!(robust_raw, alloy_raw);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_raw_transaction_by_block_hash_and_index_not_found() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let _ = counter.increase().send().await?.watch().await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    let robust_raw = robust.get_raw_transaction_by_block_hash_and_index(block_hash, 999).await?;
+    let alloy_raw =
+        alloy_provider.get_raw_transaction_by_block_hash_and_index(block_hash, 999).await?;
+
+    assert!(robust_raw.is_none());
+    assert_eq!(robust_raw, alloy_raw);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getRawTransactionByBlockNumberAndIndex
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_raw_transaction_by_block_number_and_index_succeeds() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let mine_blocks = 5;
+    let _ = counter.increase().send().await?.watch().await?;
+
+    alloy_provider.anvil_mine(Some(mine_blocks), None).await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+
+    let robust_raw = robust
+        .get_raw_transaction_by_block_number_and_index(
+            BlockNumberOrTag::Number(block_number - mine_blocks - 1),
+            0,
+        )
+        .await?;
+    let alloy_raw = alloy_provider
+        .get_raw_transaction_by_block_number_and_index(
+            BlockNumberOrTag::Number(block_number - mine_blocks - 1),
+            0,
+        )
+        .await?;
+
+    assert!(robust_raw.is_some());
+    assert_eq!(robust_raw, alloy_raw);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_raw_transaction_by_block_number_and_index_not_found() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+
+    let mine_blocks = 5;
+    let _ = counter.increase().send().await?.watch().await?;
+
+    alloy_provider.anvil_mine(Some(mine_blocks), None).await?;
+
+    let block_number = alloy_provider.get_block_number().await?;
+
+    let robust_raw = robust
+        .get_raw_transaction_by_block_number_and_index(
+            BlockNumberOrTag::Number(block_number - mine_blocks - 1),
+            999,
+        )
+        .await?;
+    let alloy_raw = alloy_provider
+        .get_raw_transaction_by_block_number_and_index(
+            BlockNumberOrTag::Number(block_number - mine_blocks - 1),
+            999,
+        )
+        .await?;
+
+    assert!(robust_raw.is_none());
+    assert_eq!(robust_raw, alloy_raw);
+
     Ok(())
 }

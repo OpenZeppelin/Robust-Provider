@@ -5,7 +5,6 @@ use alloy::{
     providers::{Provider, ext::AnvilApi},
 };
 use robust_provider::Error;
-use tokio_stream::StreamExt;
 
 // ============================================================================
 // eth_getBlockByNumber
@@ -490,98 +489,6 @@ async fn test_get_uncle_with_various_indices() -> anyhow::Result<()> {
         assert!(robust_uncle.is_none());
         assert_eq!(robust_uncle, alloy_uncle);
     }
-
-    Ok(())
-}
-
-// ============================================================================
-// watch_blocks
-// ============================================================================
-
-#[tokio::test]
-async fn test_watch_blocks_succeeds() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
-
-    let robust_poller = robust.watch_blocks().await?;
-    let mut stream = robust_poller.into_stream();
-
-    alloy_provider.anvil_mine(Some(3), None).await?;
-
-    let block_hashes = stream.next().await.expect("should get block hashes");
-
-    assert!(!block_hashes.is_empty());
-    for hash in &block_hashes {
-        let block = alloy_provider.get_block_by_hash(*hash).await?;
-        assert!(block.is_some());
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_watch_blocks_returns_correct_hashes() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
-
-    let robust_poller = robust.watch_blocks().await?;
-    let mut stream = robust_poller.into_stream();
-
-    alloy_provider.anvil_mine(Some(1), None).await?;
-
-    let watch_hashes = stream.next().await.expect("should get block hashes");
-    assert!(!watch_hashes.is_empty());
-
-    let block = alloy_provider
-        .get_block_by_number(BlockNumberOrTag::Number(1))
-        .await?
-        .expect("block should exist");
-
-    assert!(watch_hashes.contains(&block.header.hash));
-
-    Ok(())
-}
-
-// ============================================================================
-// watch_full_blocks
-// ============================================================================
-
-#[tokio::test]
-async fn test_watch_full_blocks_succeeds() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
-
-    let watch = robust.watch_full_blocks().await?;
-    let mut stream = watch.into_stream();
-
-    alloy_provider.anvil_mine(Some(2), None).await?;
-
-    let block1 = stream.next().await.expect("should get block")?;
-    let block2 = stream.next().await.expect("should get block")?;
-
-    assert_eq!(block1.header.number, 1);
-    assert_eq!(block2.header.number, 2);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_watch_full_blocks_with_full_transactions() -> anyhow::Result<()> {
-    let (_anvil, robust, _alloy_provider, counter) = setup_anvil_with_contract().await?;
-
-    let watch = robust.watch_full_blocks().await?.full();
-    let mut stream = watch.into_stream();
-
-    let _ = counter.increase().send().await?.watch().await?;
-
-    let mut found_tx = false;
-    for _ in 0..5 {
-        if let Some(Ok(block)) = stream.next().await &&
-            !block.transactions.is_empty()
-        {
-            found_tx = true;
-            break;
-        }
-    }
-
-    assert!(found_tx, "Should find a block with transactions");
 
     Ok(())
 }

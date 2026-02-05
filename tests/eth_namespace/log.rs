@@ -4,7 +4,6 @@ use alloy::{
     providers::Provider,
     rpc::types::{Filter, Log},
 };
-use tokio_stream::StreamExt;
 
 // ============================================================================
 // eth_getFilterLogs
@@ -123,86 +122,6 @@ async fn test_uninstall_filter_returns_false_for_invalid_id() -> anyhow::Result<
 
     assert!(!robust_result);
     assert_eq!(robust_result, alloy_result);
-
-    Ok(())
-}
-
-// ============================================================================
-// watch_logs
-// ============================================================================
-
-#[tokio::test]
-async fn test_watch_logs_succeeds() -> anyhow::Result<()> {
-    let (_anvil, robust, _alloy_provider, counter) = setup_anvil_with_contract().await?;
-
-    let filter = Filter::new().address(*counter.address());
-    let poller = robust.watch_logs(&filter).await?;
-    let mut stream = poller.into_stream();
-
-    let _ = counter.increase().send().await?.watch().await?;
-
-    let logs: Vec<Log> = stream.next().await.expect("should get logs");
-
-    assert!(!logs.is_empty());
-    assert_eq!(logs[0].address(), *counter.address());
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_watch_logs_with_event_filter() -> anyhow::Result<()> {
-    let (_anvil, robust, _alloy_provider, counter) = setup_anvil_with_contract().await?;
-
-    let filter = Filter::new().address(*counter.address()).event("CountIncreased(uint256)");
-
-    let poller = robust.watch_logs(&filter).await?;
-    let mut stream = poller.into_stream();
-
-    let _ = counter.increase().send().await?.watch().await?;
-
-    let logs: Vec<Log> = stream.next().await.expect("should get logs");
-
-    assert_eq!(logs.len(), 1);
-    assert_eq!(logs[0].address(), *counter.address());
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_watch_logs_multiple_events() -> anyhow::Result<()> {
-    let (_anvil, robust, _alloy_provider, counter) = setup_anvil_with_contract().await?;
-
-    let filter = Filter::new().address(*counter.address());
-    let poller = robust.watch_logs(&filter).await?;
-    let mut stream = poller.into_stream();
-
-    let _ = counter.increase().send().await?.watch().await?;
-    let _ = counter.increase().send().await?.watch().await?;
-    let _ = counter.increase().send().await?.watch().await?;
-
-    let mut all_logs = Vec::new();
-    for _ in 0..3 {
-        if let Some(logs) = stream.next().await {
-            all_logs.extend(logs);
-            if all_logs.len() >= 3 {
-                break;
-            }
-        }
-    }
-
-    assert!(all_logs.len() >= 3);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_watch_logs_empty_filter() -> anyhow::Result<()> {
-    let (_anvil, robust, _alloy_provider) = setup_anvil().await?;
-
-    let filter = Filter::new();
-    let result = robust.watch_logs(&filter).await;
-
-    assert!(result.is_ok());
 
     Ok(())
 }
