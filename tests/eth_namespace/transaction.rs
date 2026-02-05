@@ -267,7 +267,6 @@ async fn test_new_pending_transactions_filter_succeeds() -> anyhow::Result<()> {
 
 // FIX: For some reason this test is failing
 #[tokio::test]
-#[ignore = "FIX"]
 async fn test_fill_transaction_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
@@ -435,14 +434,15 @@ async fn test_send_tx_envelope_succeeds() -> anyhow::Result<()> {
 
     let tx_envelope = TxEnvelope::decode_2718(&mut signed_tx_bytes.as_ref()).unwrap();
 
-    let robust_pending = robust.send_tx_envelope(tx_envelope.clone()).await?;
+    let robust_envelope = robust.send_tx_envelope(tx_envelope.clone()).await?.watch().await?;
 
-    alloy_provider.anvil_mine(Some(5), None).await?;
+    // reset the Anvil instance, which resets nonce, and (due to Anvil's nature) ensures the
+    // resulting transaction hashes are the same if the underlying provider behavior is the same
+    let (_anvil, _, alloy_provider) = setup_anvil().await?;
 
-    let robust_receipt =
-        alloy_provider.get_transaction_by_hash(robust_pending.tx_hash().to_owned()).await?;
+    let alloy_envelope = alloy_provider.send_tx_envelope(tx_envelope).await?.watch().await?;
 
-    assert!(robust_receipt.is_some());
+    assert_eq!(robust_envelope, alloy_envelope);
     Ok(())
 }
 
