@@ -436,9 +436,7 @@ async fn test_send_tx_envelope_succeeds() -> anyhow::Result<()> {
 
     let robust_envelope = robust.send_tx_envelope(tx_envelope.clone()).await?.watch().await?;
 
-    // reset the Anvil instance, which resets nonce, and (due to Anvil's nature) ensures the
-    // resulting transaction hashes are the same if the underlying provider behavior is the same
-    let (_anvil, _, alloy_provider) = setup_anvil().await?;
+    alloy_provider.anvil_reset(None).await?;
 
     let alloy_envelope = alloy_provider.send_tx_envelope(tx_envelope).await?.watch().await?;
 
