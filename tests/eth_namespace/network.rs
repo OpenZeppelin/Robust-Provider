@@ -80,7 +80,7 @@ async fn test_raw_request_dyn_with_params() -> anyhow::Result<()> {
     let accounts = alloy_provider.get_accounts().await?;
     let address = accounts[0];
 
-    let params_json = format!(r#"["{:?}", "latest"]"#, address);
+    let params_json = format!(r#"["{address:?}", "latest"]"#);
     let params = RawValue::from_string(params_json)?;
     let result = robust.raw_request_dyn(Cow::Borrowed("eth_getBalance"), &params).await?;
 
