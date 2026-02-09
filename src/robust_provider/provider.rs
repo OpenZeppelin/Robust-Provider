@@ -1,19 +1,20 @@
 //! Core [`RobustProvider`] implementation with retry and failover logic.
 
-use std::{fmt::Debug, future::Future, time::Duration};
+use std::{fmt::Debug, future::Future, sync::Arc, time::Duration};
 
 use backon::{ExponentialBuilder, Retryable};
 use tokio::time::timeout;
 
 use super::errors::{CoreError, is_retryable_error};
 use alloy::{
-    consensus::TrieAccount,
+    consensus::{BlockHeader, TrieAccount},
     eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
-    network::{Ethereum, Network},
+    network::{BlockResponse, Ethereum, Network},
+    node_bindings::{EIP1559_FEE_ESTIMATION_PAST_BLOCKS, EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE},
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
-    providers::{PendingTransactionBuilder, Provider, RootProvider},
+    providers::{PendingTransactionBuilder, Provider, RootProvider, utils::Eip1559Estimator},
     rpc::{
         json_rpc::RpcRecv,
         types::{
@@ -368,6 +369,33 @@ impl<N: Network> RobustProvider<N> {
         fn get_client_version() -> String
     );
 
+    pub async fn estimate_eip1559_fees_with(
+        &self,
+        estimator: Eip1559Estimator,
+    ) -> Result<Eip1559Estimation, Error> {
+        let fee_history = self
+            .get_fee_history(
+                EIP1559_FEE_ESTIMATION_PAST_BLOCKS,
+                BlockNumberOrTag::Latest,
+                &[EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE],
+            )
+            .await?;
+
+        let base_fee_per_gas = match fee_history.latest_block_base_fee() {
+            Some(base_fee) if base_fee != 0 => base_fee,
+            _ => self
+                .get_block_by_number(BlockNumberOrTag::Latest)
+                .await?
+                .header()
+                .as_ref()
+                .base_fee_per_gas()
+                .ok_or(Error::UnsupportedFeature("eip1559"))?
+                .into(),
+        };
+
+        Ok(estimator.estimate(base_fee_per_gas, &fee_history.reward.unwrap_or_default()))
+    }
+
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
     /// Returns a `RobustSubscription` that automatically:
@@ -426,6 +454,8 @@ impl<N: Network> RobustProvider<N> {
         Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
     {
         let primary = self.primary();
+        pr 
+        
 
         match self.try_provider_with_timeout(primary, &operation).await {
             Ok(value) => Ok(value),
