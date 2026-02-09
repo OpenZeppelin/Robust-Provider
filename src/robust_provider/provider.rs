@@ -377,6 +377,38 @@ impl<N: Network> RobustProvider<N> {
         fn get_client_version() -> String
     );
 
+    /// Estimates the [EIP-1559] `maxFeePerGas` and `maxPriorityFeePerGas` fields using a custom
+    /// estimator.
+    ///
+    /// # Implementation Note
+    ///
+    /// Unlike most methods in `RobustProvider`, this method **does not** wrap the underlying
+    /// provider's `estimate_eip1559_fees_with` call with retry/failover logic. Instead, it
+    /// implements the estimation logic directly (copied from alloy's implementation).
+    ///
+    /// Ref <https://github.com/alloy-rs/alloy/blob/9a90a57acde7f30787b675815334cf54c6be4ba1/crates/provider/src/provider/trait.rs#L283>
+    ///
+    /// **Reason:** This method accepts an **owned**, **non-cloneable** `Eip1559Estimator` value.
+    /// The current retry implementation (`try_operation_with_failover`) requires operations to
+    /// be retryable across multiple providers, which means closures must be able to run
+    /// multiple times. This only works with `Copy` or `Clone` types. Since `Eip1559Estimator`
+    /// consumes itself and cannot be cloned, we cannot use the standard retry wrapper.
+    ///
+    /// However, **the individual RPC calls** within this method (`get_fee_history` and
+    /// `get_block_by_number`) **do** benefit from full retry and failover support, as they use
+    /// the standard robust wrappers internally.
+    ///
+    /// # Parameters
+    ///
+    /// * `estimator` - The [`Eip1559Estimator`] to use for calculating fees.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if the underlying RPC calls fail after exhausting retries on all
+    ///   providers
+    /// * [`Error::Timeout`] - if the operation exceeds the configured timeout
+    /// * [`Error::RpcError`] with `UnsupportedFeature("eip1559")` - if the chain doesn't support
+    ///   EIP-1559 (i.e., the latest block has no `base_fee_per_gas`)
     pub async fn estimate_eip1559_fees_with(
         &self,
         estimator: Eip1559Estimator,
@@ -397,7 +429,11 @@ impl<N: Network> RobustProvider<N> {
                 .header()
                 .as_ref()
                 .base_fee_per_gas()
-                .ok_or(Error::UnsupportedFeature("eip1559"))?
+                .ok_or_else(|| {
+                    Error::RpcError(Arc::new(RpcError::<TransportErrorKind>::UnsupportedFeature(
+                        "eip1559",
+                    )))
+                })?
                 .into(),
         };
 
