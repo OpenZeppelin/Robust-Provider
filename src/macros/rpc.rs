@@ -63,13 +63,13 @@
 /// );
 /// ```
 macro_rules! robust_rpc {
-    // NOTE: Comments have been generated with the help of AI to help break down how macro works 
+    // NOTE: Comments have been generated with the help of AI to help break down how macro works
     //
     // ============================================================================
     // Main pattern: Handles methods with optional documentation, generics, and where clauses
     // ============================================================================
     // This pattern is for methods that don't need argument cloning (simple Copy types or no args).
-    // 
+    //
     // Pattern breakdown:
     // - `doc_include_error`: Optional additional error documentation
     // - `doc_args`: Optional argument descriptions for documentation
@@ -87,7 +87,7 @@ macro_rules! robust_rpc {
     ) => {
         // Generate documentation for the wrapped method
         #[doc = concat!("This is a wrapper function for `Provider::", stringify!($method), "`].")]
-        
+
         // Include argument documentation if provided
         $($(
         ///
@@ -95,7 +95,7 @@ macro_rules! robust_rpc {
         ///
         #[doc = concat!("* `", stringify!($arg_name), "` - ", $arg_desc)]
         )*)?
-        
+
         // Standard error documentation that applies to all robust RPC methods
         ///
         /// # Errors
@@ -104,17 +104,17 @@ macro_rules! robust_rpc {
         ///   by the last provider attempted on the last retry.
         /// * `Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
-        
+
         // Include any additional error documentation specific to this method
         $(
         #[doc = $($error_doc)+]
         )?
-        
+
         // Add doc alias if provided (useful for discoverability)
         $(
         #[doc(alias = $alias)]
         )?
-        
+
         // Generate the actual method signature
         // - Preserves all generic parameters and their bounds
         // - Preserves all where clause constraints
@@ -132,7 +132,7 @@ macro_rules! robust_rpc {
                     false, // is_subscription = false
                 )
                 .await;
-            
+
             // Unwrap the result, either as a simple Result or with Option handling
             robust_rpc!(@unwrap result $(, $err)?)
         }
@@ -165,7 +165,7 @@ macro_rules! robust_rpc {
         $(#[doc = $doc])*
         ///
         #[doc = concat!("This is a wrapper function for `Provider::", stringify!($method), "`].")]
-        
+
         // Generate standard documentation (same as main pattern)
         $($(
         ///
@@ -186,7 +186,7 @@ macro_rules! robust_rpc {
         $(
         #[doc(alias = $alias)]
         )?
-        
+
         // Generate method signature (same as main pattern)
         pub async fn $method $(<$($generic $(: $bound)?),+>)? (&self, $($arg: $arg_ty),+) -> Result<$ret, Error>
         $(where $($where_ty: $where_bound),+)?
@@ -197,7 +197,7 @@ macro_rules! robust_rpc {
                         // Clone each specified argument before moving into the async block
                         // This ensures the closure is FnMut-compatible and can be called multiple times
                         $(let $clone_arg = $clone_arg.clone();)+
-                        
+
                         async move {
                             // Use the cloned arguments in the provider call
                             provider.$method $(::<$($generic),+>)? ($($arg),+).await
@@ -206,7 +206,7 @@ macro_rules! robust_rpc {
                     false, // is_subscription = false
                 )
                 .await;
-            
+
             robust_rpc!(@unwrap result $(, $err)?)
         }
     };
@@ -214,7 +214,7 @@ macro_rules! robust_rpc {
     // ============================================================================
     // Internal helpers: Result unwrapping patterns
     // ============================================================================
-    
+
     // Standard unwrap: Convert TransportError to Error
     (@unwrap $result:expr) => {
         $result.map_err(Error::from)
