@@ -394,6 +394,10 @@ impl<N: Network> RobustProvider<N> {
     /// multiple times. This only works with `Copy` or `Clone` types. Since `Eip1559Estimator`
     /// consumes itself and cannot be cloned, we cannot use the standard retry wrapper.
     ///
+    /// There is a pending issue on alloy <https://github.com/alloy-rs/alloy/issues/3669> which
+    /// would allow Eip1559Estimator to implement Clone. If this is merged we can remove this
+    /// custom impl.
+    ///
     /// However, **the individual RPC calls** within this method (`get_fee_history` and
     /// `get_block_by_number`) **do** benefit from full retry and failover support, as they use
     /// the standard robust wrappers internally.
