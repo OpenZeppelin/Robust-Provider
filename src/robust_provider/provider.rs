@@ -405,34 +405,10 @@ impl<N: Network> RobustProvider<N> {
         .map_err(Error::from)
     }
 
-    /// Make a raw JSON-RPC request with raw JSON parameters and response.
-    ///
-    /// This method works with raw JSON strings without type checking, allowing you to defer
-    /// parsing or pass JSON verbatim.
-    ///
-    /// This is a wrapper function for [`Provider::raw_request_dyn`].
-    ///
-    /// # Errors
-    ///
-    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
-    ///   by the last provider attempted on the last retry.
-    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
-    ///   `call_timeout`).
-    pub async fn raw_request_dyn(
-        &self,
-        method: Cow<'static, str>,
-        params: &RawValue,
-    ) -> Result<Box<RawValue>, Error> {
-        self.try_operation_with_failover(
-            move |provider| {
-                let method = method.clone();
-                async move { provider.raw_request_dyn(method, params).await }
-            },
-            false,
-        )
-        .await
-        .map_err(Error::from)
-    }
+    robust_rpc!(
+         @clone [method]
+         fn raw_request_dyn(method: Cow<'static, str>, params: &RawValue) -> Box<RawValue>
+    );
 
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
