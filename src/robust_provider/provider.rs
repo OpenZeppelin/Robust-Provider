@@ -395,7 +395,7 @@ impl<N: Network> RobustProvider<N> {
     /// consumes itself and cannot be cloned, we cannot use the standard retry wrapper.
     ///
     /// There is a pending issue on alloy <https://github.com/alloy-rs/alloy/issues/3669> which
-    /// would allow Eip1559Estimator to implement Clone. If this is merged we can remove this
+    /// would allow [`Eip1559Estimator`] to implement Clone. If this is merged we can remove this
     /// custom impl.
     ///
     /// However, **the individual RPC calls** within this method (`get_fee_history` and
