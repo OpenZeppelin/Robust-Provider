@@ -1,8 +1,9 @@
 //! Core [`RobustProvider`] implementation with retry and failover logic.
 
-use std::{fmt::Debug, future::Future, sync::Arc, time::Duration};
+use std::{borrow::Cow, fmt::Debug, future::Future, sync::Arc, time::Duration};
 
 use backon::{ExponentialBuilder, Retryable};
+use serde_json::value::RawValue;
 use tokio::time::timeout;
 
 use super::errors::{CoreError, is_retryable_error};
@@ -16,7 +17,7 @@ use alloy::{
     },
     providers::{PendingTransactionBuilder, Provider, RootProvider, utils::Eip1559Estimator},
     rpc::{
-        json_rpc::RpcRecv,
+        json_rpc::{RpcRecv, RpcSend},
         types::{
             AccessListResult, AccountInfo, Bundle, EIP1186AccountProofResponse, EthCallResponse,
             FeeHistory, FillTransaction, Filter, Log, SyncStatus,
@@ -86,6 +87,13 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(fn get_chain_id() -> u64);
+
+    robust_rpc!(fn get_net_version() -> u64);
+
+    robust_rpc!(
+        doc_args = [(data, "The data to hash.")]
+        fn get_sha3(data: &[u8]) -> B256
+    );
 
     robust_rpc!(
         doc_args = [(request, "The transaction request to create an access list for.")]
@@ -396,6 +404,64 @@ impl<N: Network> RobustProvider<N> {
         Ok(estimator.estimate(base_fee_per_gas, &fee_history.reward.unwrap_or_default()))
     }
 
+    /// Make a raw JSON-RPC request with typed parameters and response.
+    ///
+    /// This method allows you to call any RPC method with typed serialization/deserialization.
+    ///
+    /// This is a wrapper function for [`Provider::raw_request`].
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn raw_request<P, R>(&self, method: Cow<'static, str>, params: P) -> Result<R, Error>
+    where
+        P: RpcSend,
+        R: RpcRecv,
+    {
+        self.try_operation_with_failover(
+            move |provider| {
+                let method = method.clone();
+                let params = params.clone();
+                async move { provider.raw_request(method, params).await }
+            },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
+    /// Make a raw JSON-RPC request with raw JSON parameters and response.
+    ///
+    /// This method works with raw JSON strings without type checking, allowing you to defer
+    /// parsing or pass JSON verbatim.
+    ///
+    /// This is a wrapper function for [`Provider::raw_request_dyn`].
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn raw_request_dyn(
+        &self,
+        method: Cow<'static, str>,
+        params: &RawValue,
+    ) -> Result<Box<RawValue>, Error> {
+        self.try_operation_with_failover(
+            move |provider| {
+                let method = method.clone();
+                async move { provider.raw_request_dyn(method, params).await }
+            },
+            false,
+        )
+        .await
+        .map_err(Error::from)
+    }
+
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
     /// Returns a `RobustSubscription` that automatically:
@@ -454,8 +520,6 @@ impl<N: Network> RobustProvider<N> {
         Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
     {
         let primary = self.primary();
-        pr 
-        
 
         match self.try_provider_with_timeout(primary, &operation).await {
             Ok(value) => Ok(value),
