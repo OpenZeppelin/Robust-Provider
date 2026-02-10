@@ -100,9 +100,9 @@ macro_rules! robust_rpc {
         ///
         /// # Errors
         ///
-        /// * `Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
         ///   by the last provider attempted on the last retry.
-        /// * `Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
 
         // Include any additional error documentation specific to this method
@@ -176,9 +176,9 @@ macro_rules! robust_rpc {
         ///
         /// # Errors
         ///
-        /// * `Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+        /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
         ///   by the last provider attempted on the last retry.
-        /// * `Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+        /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
         ///   `call_timeout`).
         $(
         #[doc = $($error_doc)+]
