@@ -1,6 +1,6 @@
 //! Core [`RobustProvider`] implementation with retry and failover logic.
 
-use std::{borrow::Cow, fmt::Debug, future::Future, sync::Arc, time::Duration};
+use std::{borrow::Cow, fmt::Debug, future::Future, time::Duration};
 
 use backon::{ExponentialBuilder, Retryable};
 use serde_json::value::RawValue;
@@ -11,11 +11,16 @@ use alloy::{
     consensus::{BlockHeader, TrieAccount},
     eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
     network::{BlockResponse, Ethereum, Network},
-    node_bindings::{EIP1559_FEE_ESTIMATION_PAST_BLOCKS, EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE},
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
-    providers::{PendingTransactionBuilder, Provider, RootProvider, utils::Eip1559Estimator},
+    providers::{
+        PendingTransactionBuilder, Provider, RootProvider,
+        utils::{
+            EIP1559_FEE_ESTIMATION_PAST_BLOCKS, EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE,
+            Eip1559Estimator,
+        },
+    },
     rpc::{
         json_rpc::{RpcRecv, RpcSend},
         types::{
@@ -425,20 +430,29 @@ impl<N: Network> RobustProvider<N> {
             )
             .await?;
 
+        // if the base fee of the Latest block is 0 then we need check if the latest block even has
+        // a base fee/supports EIP1559
         let base_fee_per_gas = match fee_history.latest_block_base_fee() {
             Some(base_fee) if base_fee != 0 => base_fee,
-            _ => self
-                .get_block_by_number(BlockNumberOrTag::Latest)
-                .await?
-                .header()
-                .as_ref()
-                .base_fee_per_gas()
-                .ok_or_else(|| {
-                    Error::RpcError(Arc::new(RpcError::<TransportErrorKind>::UnsupportedFeature(
-                        "eip1559",
-                    )))
-                })?
-                .into(),
+            _ => {
+                // empty response, fetch basefee from latest block directly
+                self.get_block_by_number(BlockNumberOrTag::Latest)
+                    .await
+                    .map_err(|e| {
+                        // this is how alloy implements it - if block not found, return NullResp,
+                        // see: https://github.com/alloy-rs/alloy/blob/aef6655961fa4b75ccf3b8a45186c57b09e7954e/crates/provider/src/provider/trait.rs#L303
+                        if matches!(e, Error::BlockNotFound) {
+                            RpcError::NullResp.into()
+                        } else {
+                            e
+                        }
+                    })?
+                    .header()
+                    .as_ref()
+                    .base_fee_per_gas()
+                    .ok_or(RpcError::UnsupportedFeature("eip1559"))?
+                    .into()
+            }
         };
 
         Ok(estimator.estimate(base_fee_per_gas, &fee_history.reward.unwrap_or_default()))
