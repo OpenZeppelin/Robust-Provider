@@ -1,6 +1,6 @@
 //! Core [`RobustProvider`] implementation with retry and failover logic.
 
-use std::{borrow::Cow, fmt::Debug, future::Future, time::Duration};
+use std::{borrow::Cow, fmt::Debug, future::Future, sync::Arc, time::Duration};
 
 use backon::{ExponentialBuilder, Retryable};
 use serde_json::value::RawValue;
@@ -8,13 +8,14 @@ use tokio::time::timeout;
 
 use super::errors::{CoreError, is_retryable_error};
 use alloy::{
-    consensus::TrieAccount,
+    consensus::{BlockHeader, TrieAccount},
     eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
-    network::{Ethereum, Network},
+    network::{BlockResponse, Ethereum, Network},
+    node_bindings::{EIP1559_FEE_ESTIMATION_PAST_BLOCKS, EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE},
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
-    providers::{PendingTransactionBuilder, Provider, RootProvider},
+    providers::{PendingTransactionBuilder, Provider, RootProvider, utils::Eip1559Estimator},
     rpc::{
         json_rpc::{RpcRecv, RpcSend},
         types::{
@@ -375,6 +376,73 @@ impl<N: Network> RobustProvider<N> {
         doc_alias = "web3_client_version"
         fn get_client_version() -> String
     );
+
+    /// Estimates the [EIP-1559] `maxFeePerGas` and `maxPriorityFeePerGas` fields using a custom
+    /// estimator.
+    ///
+    /// # Implementation Note
+    ///
+    /// Unlike most methods in `RobustProvider`, this method **does not** wrap the underlying
+    /// provider's `estimate_eip1559_fees_with` call with retry/failover logic. Instead, it
+    /// implements the estimation logic directly (copied from alloy's implementation).
+    ///
+    /// Ref <https://github.com/alloy-rs/alloy/blob/9a90a57acde7f30787b675815334cf54c6be4ba1/crates/provider/src/provider/trait.rs#L283>
+    ///
+    /// **Reason:** This method accepts an **owned**, **non-cloneable** `Eip1559Estimator` value.
+    /// The current retry implementation (`try_operation_with_failover`) requires operations to
+    /// be retryable across multiple providers, which means closures must be able to run
+    /// multiple times. This only works with `Copy` or `Clone` types. Since `Eip1559Estimator`
+    /// consumes itself and cannot be cloned, we cannot use the standard retry wrapper.
+    ///
+    /// There is a pending issue on alloy <https://github.com/alloy-rs/alloy/issues/3669> which
+    /// would allow [`Eip1559Estimator`] to implement Clone. If this is merged we can remove this
+    /// custom impl.
+    ///
+    /// However, **the individual RPC calls** within this method (`get_fee_history` and
+    /// `get_block_by_number`) **do** benefit from full retry and failover support, as they use
+    /// the standard robust wrappers internally.
+    ///
+    /// # Parameters
+    ///
+    /// * `estimator` - The [`Eip1559Estimator`] to use for calculating fees.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if the underlying RPC calls fail after exhausting retries on all
+    ///   providers
+    /// * [`Error::Timeout`] - if the operation exceeds the configured timeout
+    /// * [`Error::RpcError`] with `UnsupportedFeature("eip1559")` - if the chain doesn't support
+    ///   EIP-1559 (i.e., the latest block has no `base_fee_per_gas`)
+    pub async fn estimate_eip1559_fees_with(
+        &self,
+        estimator: Eip1559Estimator,
+    ) -> Result<Eip1559Estimation, Error> {
+        let fee_history = self
+            .get_fee_history(
+                EIP1559_FEE_ESTIMATION_PAST_BLOCKS,
+                BlockNumberOrTag::Latest,
+                &[EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE],
+            )
+            .await?;
+
+        let base_fee_per_gas = match fee_history.latest_block_base_fee() {
+            Some(base_fee) if base_fee != 0 => base_fee,
+            _ => self
+                .get_block_by_number(BlockNumberOrTag::Latest)
+                .await?
+                .header()
+                .as_ref()
+                .base_fee_per_gas()
+                .ok_or_else(|| {
+                    Error::RpcError(Arc::new(RpcError::<TransportErrorKind>::UnsupportedFeature(
+                        "eip1559",
+                    )))
+                })?
+                .into(),
+        };
+
+        Ok(estimator.estimate(base_fee_per_gas, &fee_history.reward.unwrap_or_default()))
+    }
 
     robust_rpc!(
             @clone [method, params]
