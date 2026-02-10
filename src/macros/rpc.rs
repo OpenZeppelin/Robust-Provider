@@ -86,7 +86,7 @@ macro_rules! robust_rpc {
         $(where $($where_ty:ty: $where_bound:path),+ $(,)?)?
     ) => {
         // Generate documentation for the wrapped method
-        #[doc = concat!("This is a wrapper function for `Provider::", stringify!($method), "`].")]
+        #[doc = concat!("This is a wrapper function for [`Provider::", stringify!($method), "`].")]
 
         // Include argument documentation if provided
         $($(
@@ -164,7 +164,7 @@ macro_rules! robust_rpc {
         // Include custom documentation if provided
         $(#[doc = $doc])*
         ///
-        #[doc = concat!("This is a wrapper function for `Provider::", stringify!($method), "`].")]
+        #[doc = concat!("This is a wrapper function for [`Provider::", stringify!($method), "`].")]
 
         // Generate standard documentation (same as main pattern)
         $($(
