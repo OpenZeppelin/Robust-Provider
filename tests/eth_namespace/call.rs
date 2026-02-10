@@ -85,7 +85,25 @@ async fn test_get_chain_id_succeeds() -> anyhow::Result<()> {
 }
 
 // ============================================================================
-// eth_estimateGas
+// eth_createAccessList
+// ============================================================================
+
+#[tokio::test]
+async fn test_create_access_list() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    let tx = TransactionRequest::default();
+
+    let robust_access_list = robust.create_access_list(&tx).await?;
+    let alloy_access_list = alloy_provider.create_access_list(&tx).await?;
+
+    assert_eq!(robust_access_list, alloy_access_list);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_estimate_eip1559Fees
 // ============================================================================
 
 #[tokio::test]
