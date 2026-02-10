@@ -37,9 +37,7 @@ async fn test_get_fee_history_succeeds() -> anyhow::Result<()> {
         .get_fee_history(block_count, BlockNumberOrTag::Latest, &reward_percentiles)
         .await?;
 
-    assert_eq!(robust_fee_history.oldest_block, alloy_fee_history.oldest_block);
-    assert_eq!(robust_fee_history.base_fee_per_gas, alloy_fee_history.base_fee_per_gas);
-    assert_eq!(robust_fee_history.gas_used_ratio, alloy_fee_history.gas_used_ratio);
+    assert_eq!(robust_fee_history, alloy_fee_history);
 
     Ok(())
 }
