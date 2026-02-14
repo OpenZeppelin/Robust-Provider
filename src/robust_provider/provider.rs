@@ -532,12 +532,50 @@ impl<N: Network> RobustProvider<N> {
                 "Starting HTTP polling subscription on primary provider"
             );
 
-            let http_sub =
-                HttpPollingSubscription::new(self.primary_provider.clone(), config.clone())
-                    .await
-                    .map_err(|_| Error::Timeout)?;
+            // Try HTTP polling on primary first
+            let http_sub_result =
+                HttpPollingSubscription::new(self.primary_provider.clone(), config.clone()).await;
 
-            return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
+            if let Ok(http_sub) = http_sub_result {
+                return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
+            }
+
+            warn!("HTTP subscription on primary failed, trying fallback providers");
+
+            // Primary HTTP subscription failed, try fallback providers
+            // Try WebSocket first, then HTTP polling
+            for (fallback_idx, provider) in self.fallback_providers().iter().enumerate() {
+                // Try WebSocket subscription first if supported
+                if provider.client().pubsub_frontend().is_some() {
+                    let operation = move |p: RootProvider<N>| async move {
+                        p.subscribe_blocks()
+                            .channel_size(self.subscription_buffer_capacity)
+                            .await
+                    };
+
+                    if let Ok(sub) = self.try_provider_with_timeout(provider, &operation).await {
+                        info!(
+                            fallback_index = fallback_idx,
+                            "Subscription switched to fallback provider (WebSocket)"
+                        );
+                        return Ok(RobustSubscription::new(sub, self.clone()));
+                    }
+                }
+
+                // Try HTTP polling on fallback
+                if let Ok(http_sub) =
+                    HttpPollingSubscription::new(provider.clone(), config.clone()).await
+                {
+                    info!(
+                        fallback_index = fallback_idx,
+                        "Subscription switched to fallback provider (HTTP polling)"
+                    );
+                    return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
+                }
+            }
+
+            // All providers exhausted
+            return Err(Error::Timeout);
         }
 
         // Primary doesn't support pubsub and HTTP subscriptions not enabled

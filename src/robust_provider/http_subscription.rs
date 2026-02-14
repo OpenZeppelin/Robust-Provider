@@ -14,11 +14,15 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! use alloy::providers::ProviderBuilder;
 //! use robust_provider::RobustProviderBuilder;
 //! use std::time::Duration;
 //!
-//! let robust = RobustProviderBuilder::new(http_provider)
+//! # async fn example() -> anyhow::Result<()> {
+//! let http = ProviderBuilder::new().connect_http("http://localhost:8545")?;
+//!
+//! let robust = RobustProviderBuilder::new(http)
 //!     .allow_http_subscriptions(true)
 //!     .poll_interval(Duration::from_secs(12))
 //!     .build()
@@ -28,6 +32,7 @@
 //! while let Ok(block) = subscription.recv().await {
 //!     println!("New block: {}", block.number);
 //! }
+//! # Ok(()) }
 //! ```
 
 use std::{pin::Pin, sync::Arc, time::Duration};
@@ -38,7 +43,8 @@ use alloy::{
     providers::{Provider, RootProvider},
     transports::{RpcError, TransportErrorKind},
 };
-use futures_util::{FutureExt, Stream, StreamExt, stream};
+use futures_util::{StreamExt, stream};
+use tokio::sync::mpsc;
 
 /// Default polling interval for HTTP subscriptions.
 ///
@@ -116,15 +122,13 @@ impl Default for HttpSubscriptionConfig {
 ///
 /// # Trade-offs
 ///
-/// - **Latency**: New blocks are detected with up to `poll_interval` delay
-/// - **RPC Load**: One filter poll per interval, plus one `get_block_by_hash` per new block
+/// * **Latency**: New blocks are detected with up to `poll_interval` delay
+/// * **RPC Load**: One filter poll per interval, plus one `get_block_by_hash` per new block
 pub struct HttpPollingSubscription<N: Network> {
-    /// Stream of block hashes from the poller
-    stream: Pin<Box<dyn Stream<Item = BlockHash> + Send>>,
+    /// Receiver for block hashes from the poller
+    receiver: mpsc::Receiver<BlockHash>,
     /// Provider used to fetch block headers from hashes
     provider: RootProvider<N>,
-    /// Buffer
-    buffer: Option<BlockHash>,
 }
 
 impl<N: Network + 'static> HttpPollingSubscription<N>
@@ -153,14 +157,28 @@ where
         provider: RootProvider<N>,
         config: HttpSubscriptionConfig,
     ) -> Result<Self, HttpSubscriptionError> {
+        let (sender, receiver) = mpsc::channel(config.buffer_capacity);
+
         let poller = provider
             .watch_blocks()
             .await
             .map_err(HttpSubscriptionError::from)?
             .with_poll_interval(config.poll_interval);
-        let stream = poller.into_stream().flat_map(stream::iter);
 
-        Ok(Self { stream: Box::pin(stream), provider, buffer: None })
+        // Spawn a task to forward block hashes to the channel
+        let stream = poller.into_stream().flat_map(stream::iter);
+        tokio::spawn(async move {
+            let mut stream = stream;
+            let mut sender = sender;
+            while let Some(hash) = stream.next().await {
+                if sender.send(hash).await.is_err() {
+                    // Receiver dropped, stop polling
+                    break;
+                }
+            }
+        });
+
+        Ok(Self { receiver, provider })
     }
 
     /// Receive the next block header.
@@ -169,16 +187,12 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`HttpSubscriptionError::Closed`] if the subscription channel is closed.
-    /// Returns [`HttpSubscriptionError::Timeout`] or [`HttpSubscriptionError::RpcError`]
-    /// if the polling task encountered an error.
+    /// * [`HttpSubscriptionError::Closed`] - if the subscription channel is closed.
+    /// * [`HttpSubscriptionError::Timeout`] - if the polling operation times out.
+    /// * [`HttpSubscriptionError::RpcError`] - if an RPC error occurs during polling.
+    /// * [`HttpSubscriptionError::BlockFetchFailed`] - if the block fetch fails.
     pub async fn recv(&mut self) -> Result<N::HeaderResponse, HttpSubscriptionError> {
-        // Check buffer first, otherwise read from stream
-        let block_hash = if let Some(hash) = self.buffer.take() {
-            hash
-        } else {
-            self.stream.next().await.ok_or(HttpSubscriptionError::Closed)?
-        };
+        let block_hash = self.receiver.recv().await.ok_or(HttpSubscriptionError::Closed)?;
 
         let block = self
             .provider
@@ -189,25 +203,9 @@ where
     }
 
     /// Check if the subscription channel is empty (no pending messages).
-    ///
-    /// If buffer has an item, returns `false`.
-    /// Otherwise, tries to read from stream and buffers the result.
     #[must_use]
     pub fn is_empty(&mut self) -> bool {
-        // If buffer already has something
-        if self.buffer.is_some() {
-            return false;
-        }
-
-        // Try to get next item
-        match self.stream.next().now_or_never() {
-            Some(Some(hash)) => {
-                self.buffer = Some(hash);
-                false
-            }
-            Some(None) => true,
-            None => true,
-        }
+        self.receiver.is_closed() || self.receiver.capacity() == 0
     }
 }
 
