@@ -115,7 +115,7 @@ impl Default for HttpSubscriptionConfig {
 ///
 /// # How It Works
 ///
-/// Uses alloy's `watch_blocks()`, which:
+/// Uses alloy's [`watch_blocks()`](alloy::providers::Provider::watch_blocks), which:
 /// 1. Creates a block filter via `eth_newBlockFilter`
 /// 2. Polls `eth_getFilterChanges` at `poll_interval` to get new block hashes
 /// 3. Fetches full block headers for each hash
@@ -146,12 +146,19 @@ where
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust,no_run
+    /// use robust_provider::robust_provider::http_subscription::{HttpPollingSubscription, HttpSubscriptionConfig};
+    /// use alloy::{network::Ethereum, providers::RootProvider};
+    /// use std::time::Duration;
+    ///
+    /// # async fn example(provider: RootProvider<Ethereum>) -> anyhow::Result<()> {
     /// let config = HttpSubscriptionConfig {
     ///     poll_interval: Duration::from_secs(6),
     ///     ..Default::default()
     /// };
     /// let mut sub = HttpPollingSubscription::new(provider, config).await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn new(
         provider: RootProvider<N>,
