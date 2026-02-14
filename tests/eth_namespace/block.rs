@@ -398,7 +398,6 @@ async fn test_get_uncle_count_by_block_number_succeeds() -> anyhow::Result<()> {
         let alloy_count = alloy_provider.get_uncle_count(tag).await?;
 
         assert_eq!(robust_count, alloy_count);
-        // Anvil doesn't produce uncles
         assert_eq!(robust_count, 0);
     }
 
@@ -419,8 +418,77 @@ async fn test_get_uncle_count_by_block_hash_succeeds() -> anyhow::Result<()> {
     let alloy_count = alloy_provider.get_uncle_count(BlockId::hash(block_hash)).await?;
 
     assert_eq!(robust_count, alloy_count);
-    // Anvil doesn't produce uncles
     assert_eq!(robust_count, 0);
+
+    Ok(())
+}
+
+// ============================================================================
+// eth_getUncleByBlockHashAndIndex / eth_getUncleByBlockNumberAndIndex
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_uncle_by_block_number_returns_none() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    // Anvil doesn't produce uncles, so get_uncle should return None
+    let robust_uncle = robust.get_uncle(BlockId::number(5), 0).await?;
+    let alloy_uncle = alloy_provider.get_uncle(BlockId::number(5), 0).await?;
+
+    assert!(robust_uncle.is_none());
+    assert_eq!(robust_uncle, alloy_uncle);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_uncle_by_block_hash_returns_none() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    let block = alloy_provider
+        .get_block_by_number(BlockNumberOrTag::Number(5))
+        .await?
+        .expect("block should exist");
+    let block_hash = block.header.hash;
+
+    // Anvil doesn't produce uncles, so get_uncle should return None
+    let robust_uncle = robust.get_uncle(BlockId::hash(block_hash), 0).await?;
+    let alloy_uncle = alloy_provider.get_uncle(BlockId::hash(block_hash), 0).await?;
+
+    assert!(robust_uncle.is_none());
+    assert_eq!(robust_uncle, alloy_uncle);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_uncle_with_various_block_tags() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    let tags = [BlockId::latest(), BlockId::earliest(), BlockId::safe(), BlockId::finalized()];
+
+    for tag in tags {
+        let robust_uncle = robust.get_uncle(tag, 0).await?;
+        let alloy_uncle = alloy_provider.get_uncle(tag, 0).await?;
+
+        assert!(robust_uncle.is_none());
+        assert_eq!(robust_uncle, alloy_uncle);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_uncle_with_various_indices() -> anyhow::Result<()> {
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(10).await?;
+
+    for idx in [0, 1, 2, 10, 100] {
+        let robust_uncle = robust.get_uncle(BlockId::number(5), idx).await?;
+        let alloy_uncle = alloy_provider.get_uncle(BlockId::number(5), idx).await?;
+
+        assert!(robust_uncle.is_none());
+        assert_eq!(robust_uncle, alloy_uncle);
+    }
 
     Ok(())
 }

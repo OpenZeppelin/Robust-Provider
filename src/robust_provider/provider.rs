@@ -1,32 +1,36 @@
 //! Core [`RobustProvider`] implementation with retry and failover logic.
 
-use std::{fmt::Debug, future::Future, time::Duration};
+use std::{borrow::Cow, fmt::Debug, future::Future, time::Duration};
 
-use alloy::{
-    network::Network,
-    providers::{Provider, RootProvider},
-    transports::{RpcError, TransportErrorKind},
-};
 use backon::{ExponentialBuilder, Retryable};
+use serde_json::value::RawValue;
 use tokio::time::timeout;
 
 use super::errors::{CoreError, is_retryable_error};
 use alloy::{
-    consensus::TrieAccount,
-    eips::{BlockId, BlockNumberOrTag},
-    network::Ethereum,
+    consensus::{BlockHeader, TrieAccount},
+    eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
+    network::{BlockResponse, Ethereum, Network},
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
-    providers::PendingTransactionBuilder,
+    providers::{
+        PendingTransactionBuilder, Provider, RootProvider,
+        utils::{
+            EIP1559_FEE_ESTIMATION_PAST_BLOCKS, EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE,
+            Eip1559Estimator,
+        },
+    },
     rpc::{
-        json_rpc::RpcRecv,
+        json_rpc::{RpcRecv, RpcSend},
         types::{
-            Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Filter, Log,
-            SyncStatus,
+            AccessListResult, AccountInfo, Bundle, EIP1186AccountProofResponse, EthCallResponse,
+            FeeHistory, FillTransaction, Filter, Log, SyncStatus,
+            erc4337::TransactionConditional,
             simulate::{SimulatePayload, SimulatedBlock},
         },
     },
+    transports::{RpcError, TransportErrorKind},
 };
 
 use crate::{Error, block_not_found_doc, robust_provider::RobustSubscription};
@@ -98,10 +102,26 @@ impl<N: Network> RobustProvider<N> {
 
     robust_rpc!(fn get_chain_id() -> u64);
 
+    robust_rpc!(fn get_net_version() -> u64);
+
+    robust_rpc!(
+        doc_args = [(data, "The data to hash.")]
+        fn get_sha3(data: &[u8]) -> B256
+    );
+
+    robust_rpc!(
+        doc_args = [(request, "The transaction request to create an access list for.")]
+        fn create_access_list(request: &N::TransactionRequest) -> AccessListResult
+    );
+
     robust_rpc!(
         doc_args = [(tx, "The transaction request to estimate gas for.")]
         @clone [tx]
         fn estimate_gas(tx: N::TransactionRequest) -> u64
+    );
+
+    robust_rpc!(
+        fn estimate_eip1559_fees() -> Eip1559Estimation
     );
 
     robust_rpc!(
@@ -115,6 +135,11 @@ impl<N: Network> RobustProvider<N> {
 
     robust_rpc!(fn get_gas_price() -> u128);
     robust_rpc!(fn get_max_priority_fee_per_gas() -> u128);
+
+    robust_rpc!(
+        doc_args = [(address, "The address for which to get the account info.")]
+        fn get_account_info(address: Address) -> AccountInfo
+    );
 
     robust_rpc!(
         doc_args = [(address, "The address to get the account for.")]
@@ -212,6 +237,15 @@ impl<N: Network> RobustProvider<N> {
 
     robust_rpc!(
         doc_args = [
+            (tx, "The transaction request to fill.")
+        ]
+        @clone [tx]
+        fn fill_transaction(tx: N::TransactionRequest) -> FillTransaction<N::TxEnvelope>
+        where N::TxEnvelope: RpcRecv
+    );
+
+    robust_rpc!(
+        doc_args = [
             (address, "The address of the account."),
             (keys, "A vector of storage keys to include in the proof.")
         ]
@@ -269,6 +303,14 @@ impl<N: Network> RobustProvider<N> {
     );
 
     robust_rpc!(
+        doc_args = [
+            (tag, "The block identifier (hash or number)."),
+            (idx, "The uncle index position.")
+        ]
+        fn get_uncle(tag: BlockId, idx: u64) -> Option<N::BlockResponse>
+    );
+
+    robust_rpc!(
         doc_args = [(request, "The simulation request")]
         fn simulate(request: &SimulatePayload) -> Vec<SimulatedBlock<N::BlockResponse>>
     );
@@ -283,6 +325,157 @@ impl<N: Network> RobustProvider<N> {
     robust_rpc!(
         doc_args = [(encoded_tx, "The RLP-encoded signed transaction bytes")]
         fn send_raw_transaction(encoded_tx: &[u8]) -> PendingTransactionBuilder<N>
+    );
+
+    robust_rpc!(
+        doc_args = [(encoded_tx, "The RLP-encoded signed transaction bytes")]
+        fn send_raw_transaction_sync(encoded_tx: &[u8]) -> N::ReceiptResponse
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (encoded_tx, "The RLP-encoded signed transaction bytes"),
+            (conditional, "The transaction conditional to apply")
+        ]
+        @clone [conditional]
+        fn send_raw_transaction_conditional(encoded_tx: &[u8], conditional: TransactionConditional) -> PendingTransactionBuilder<N>
+    );
+
+    robust_rpc!(
+        doc_args = [(tx, "The transaction request to send")]
+        @clone [tx]
+        fn send_transaction(tx: N::TransactionRequest) -> PendingTransactionBuilder<N>
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (tx, "The signed transaction envelope to send.")
+        ]
+        @clone [tx]
+        fn send_tx_envelope(tx: N::TxEnvelope) -> PendingTransactionBuilder<N>
+        where N::TxEnvelope: Clone
+    );
+
+    robust_rpc!(
+        doc_args = [(tx, "The transaction request to send synchronously")]
+        @clone [tx]
+        fn send_transaction_sync(tx: N::TransactionRequest) -> N::ReceiptResponse
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (sender, "The sender address"),
+            (nonce, "The nonce of the transaction")
+        ]
+        fn get_transaction_by_sender_nonce(sender: Address, nonce: u64) -> Option<N::TransactionResponse>
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (block_hash, "The hash of the block"),
+            (index, "The transaction index position")
+        ]
+        fn get_raw_transaction_by_block_hash_and_index(block_hash: B256, index: usize) -> Option<Bytes>
+    );
+
+    robust_rpc!(
+        doc_args = [
+            (block_number, "The block number or tag"),
+            (index, "The transaction index position")
+        ]
+        fn get_raw_transaction_by_block_number_and_index(block_number: BlockNumberOrTag, index: usize) -> Option<Bytes>
+    );
+
+    robust_rpc!(
+        doc_alias = "web3_client_version"
+        fn get_client_version() -> String
+    );
+
+    /// Estimates the [EIP-1559] `maxFeePerGas` and `maxPriorityFeePerGas` fields using a custom
+    /// estimator.
+    ///
+    /// # Implementation Note
+    ///
+    /// Unlike most methods in `RobustProvider`, this method **does not** wrap the underlying
+    /// provider's `estimate_eip1559_fees_with` call with retry/failover logic. Instead, it
+    /// implements the estimation logic directly (copied from alloy's implementation).
+    ///
+    /// Ref <https://github.com/alloy-rs/alloy/blob/9a90a57acde7f30787b675815334cf54c6be4ba1/crates/provider/src/provider/trait.rs#L283>
+    ///
+    /// **Reason:** This method accepts an **owned**, **non-cloneable** `Eip1559Estimator` value.
+    /// The current retry implementation (`try_operation_with_failover`) requires operations to
+    /// be retryable across multiple providers, which means closures must be able to run
+    /// multiple times. This only works with `Copy` or `Clone` types. Since `Eip1559Estimator`
+    /// consumes itself and cannot be cloned, we cannot use the standard retry wrapper.
+    ///
+    /// There is a pending issue on alloy <https://github.com/alloy-rs/alloy/issues/3669> which
+    /// would allow [`Eip1559Estimator`] to implement Clone. If this is merged we can remove this
+    /// custom impl.
+    ///
+    /// However, **the individual RPC calls** within this method (`get_fee_history` and
+    /// `get_block_by_number`) **do** benefit from full retry and failover support, as they use
+    /// the standard robust wrappers internally.
+    ///
+    /// # Parameters
+    ///
+    /// * `estimator` - The [`Eip1559Estimator`] to use for calculating fees.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if the underlying RPC calls fail after exhausting retries on all
+    ///   providers
+    /// * [`Error::Timeout`] - if the operation exceeds the configured timeout
+    /// * [`Error::RpcError`] with `UnsupportedFeature("eip1559")` - if the chain doesn't support
+    ///   EIP-1559 (i.e., the latest block has no `base_fee_per_gas`)
+    pub async fn estimate_eip1559_fees_with(
+        &self,
+        estimator: Eip1559Estimator,
+    ) -> Result<Eip1559Estimation, Error> {
+        let fee_history = self
+            .get_fee_history(
+                EIP1559_FEE_ESTIMATION_PAST_BLOCKS,
+                BlockNumberOrTag::Latest,
+                &[EIP1559_FEE_ESTIMATION_REWARD_PERCENTILE],
+            )
+            .await?;
+
+        // if the base fee of the Latest block is 0 then we need check if the latest block even has
+        // a base fee/supports EIP1559
+        let base_fee_per_gas = match fee_history.latest_block_base_fee() {
+            Some(base_fee) if base_fee != 0 => base_fee,
+            _ => {
+                // empty response, fetch basefee from latest block directly
+                self.get_block_by_number(BlockNumberOrTag::Latest)
+                    .await
+                    .map_err(|e| {
+                        // this is how alloy implements it - if block not found, return NullResp,
+                        // see: https://github.com/alloy-rs/alloy/blob/aef6655961fa4b75ccf3b8a45186c57b09e7954e/crates/provider/src/provider/trait.rs#L303
+                        if matches!(e, Error::BlockNotFound) {
+                            RpcError::NullResp.into()
+                        } else {
+                            e
+                        }
+                    })?
+                    .header()
+                    .as_ref()
+                    .base_fee_per_gas()
+                    .ok_or(RpcError::UnsupportedFeature("eip1559"))?
+                    .into()
+            }
+        };
+
+        Ok(estimator.estimate(base_fee_per_gas, &fee_history.reward.unwrap_or_default()))
+    }
+
+    robust_rpc!(
+            @clone [method, params]
+            fn raw_request<P, R>(method: Cow<'static, str>, params: P) -> R
+            where P: RpcSend, R: RpcRecv
+    );
+
+    robust_rpc!(
+         @clone [method]
+         fn raw_request_dyn(method: Cow<'static, str>, params: &RawValue) -> Box<RawValue>
     );
 
     /// Subscribe to new block headers with automatic failover and reconnection.

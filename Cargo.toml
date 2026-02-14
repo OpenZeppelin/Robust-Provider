@@ -30,6 +30,7 @@ tokio-util = "0.7.17"
 futures-util = "0.3"
 
 tracing = { version = "0.1", optional = true }
+serde_json = "1.0.149"
 
 [dev-dependencies]
 anyhow = "1.0"
