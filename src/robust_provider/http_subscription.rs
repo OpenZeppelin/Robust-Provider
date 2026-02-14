@@ -52,6 +52,12 @@ use tokio::sync::mpsc;
 /// Adjust based on the target chain's block time.
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(12);
 
+/// Default timeout for individual RPC calls during HTTP polling.
+pub const DEFAULT_CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Default buffer capacity for the internal subscription channel.
+pub const DEFAULT_BUFFER_CAPACITY: usize = 128;
+
 /// Errors specific to HTTP polling subscriptions.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum HttpSubscriptionError {
@@ -88,12 +94,12 @@ pub struct HttpSubscriptionConfig {
 
     /// Timeout for individual RPC calls.
     ///
-    /// Default: 30 seconds
+    /// Default: [`DEFAULT_CALL_TIMEOUT`] (30 seconds)
     pub call_timeout: Duration,
 
     /// Buffer size for the internal channel.
     ///
-    /// Default: 128
+    /// Default: [`DEFAULT_BUFFER_CAPACITY`] (128)
     pub buffer_capacity: usize,
 }
 
@@ -101,8 +107,8 @@ impl Default for HttpSubscriptionConfig {
     fn default() -> Self {
         Self {
             poll_interval: DEFAULT_POLL_INTERVAL,
-            call_timeout: Duration::from_secs(30),
-            buffer_capacity: 128,
+            call_timeout: DEFAULT_CALL_TIMEOUT,
+            buffer_capacity: DEFAULT_BUFFER_CAPACITY,
         }
     }
 }
@@ -237,8 +243,8 @@ mod tests {
     async fn test_http_polling_config_defaults() {
         let config = HttpSubscriptionConfig::default();
         assert_eq!(config.poll_interval, DEFAULT_POLL_INTERVAL);
-        assert_eq!(config.call_timeout, Duration::from_secs(30));
-        assert_eq!(config.buffer_capacity, 128);
+        assert_eq!(config.call_timeout, DEFAULT_CALL_TIMEOUT);
+        assert_eq!(config.buffer_capacity, DEFAULT_BUFFER_CAPACITY);
     }
 
     #[tokio::test]
