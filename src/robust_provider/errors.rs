@@ -120,7 +120,9 @@ pub(crate) fn is_retryable_error(code: i64, message: &str) -> bool {
 }
 
 pub(crate) fn is_block_not_found(code: i64, message: &str) -> bool {
-    geth::is_block_not_found(code, message) || besu::is_block_not_found(code, message)
+    geth::is_block_not_found(code, message) ||
+        besu::is_block_not_found(code, message) ||
+        anvil::is_block_not_found(code, message)
 }
 
 pub(crate) fn is_invalid_log_filter(code: i64, message: &str) -> bool {
@@ -193,6 +195,20 @@ mod besu {
     /// Reference: <https://github.com/hyperledger/besu/blob/1dfd8ed9269ef33fdbda520ef8906c3dc059e713/ethereum/api/src/main/java/org/hyperledger/besu/ethereum/api/jsonrpc/internal/response/RpcErrorType.java#L126>
     pub fn is_block_not_found(code: i64, message: &str) -> bool {
         matches!((code, message), (UNKNOWN_BLOCK_ERROR_CODE, "Unknown block"))
+    }
+}
+
+mod anvil {
+
+    /// Reference: <https://github.com/foundry-rs/foundry/blob/2b85d1fbd3647865efdae4c0e17b994638ff722c/crates/anvil/rpc/src/error.rs#L102>
+    pub const INVALID_PARAMS_ERROR_CODE: i64 = -32602;
+
+    /// Reference: <https://github.com/foundry-rs/foundry/blob/2b85d1fbd3647865efdae4c0e17b994638ff722c/crates/anvil/src/eth/error.rs#L72>
+    pub fn is_block_not_found(code: i64, message: &str) -> bool {
+        if code != INVALID_PARAMS_ERROR_CODE {
+            return false;
+        }
+        message.contains("BlockOutOfRangeError")
     }
 }
 

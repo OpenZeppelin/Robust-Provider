@@ -5,7 +5,7 @@ authors = ["OpenZeppelin"]
 license = "MIT"
 edition = "2024"
 repository = "https://github.com/OpenZeppelin/Robust-Provider"
-version = "0.2.0"
+version = "1.0.0"
 categories = [
     "asynchronous",
     "web-programming",
@@ -21,7 +21,7 @@ pedantic = "warn"
 all = "warn"
 
 [dependencies]
-alloy = { version = "1.1.2", features = ["pubsub"] }
+alloy = { version = "1.1.2", features = ["pubsub", "json-rpc"] }
 tokio = "1.48"
 backon = "1.6.0"
 tokio-stream = "0.1.17"
@@ -30,6 +30,7 @@ tokio-util = "0.7.17"
 futures-util = "0.3"
 
 tracing = { version = "0.1", optional = true }
+serde_json = "1.0.149"
 
 [dev-dependencies]
 anyhow = "1.0"
