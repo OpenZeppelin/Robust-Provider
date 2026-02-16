@@ -37,6 +37,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use crate::RobustProvider;
 use alloy::{
     network::{BlockResponse, Network},
     primitives::BlockHash,
@@ -45,7 +46,6 @@ use alloy::{
 };
 use futures_util::{StreamExt, stream};
 use tokio::sync::mpsc;
-use crate::RobustProvider;
 
 /// Default polling interval for HTTP subscriptions.
 ///
@@ -198,11 +198,7 @@ where
             }
         });
 
-        Ok(Self {
-            receiver,
-            provider,
-            call_timeout: config.call_timeout,
-        })
+        Ok(Self { receiver, provider, call_timeout: config.call_timeout })
     }
 
     /// Receive the next block header.
@@ -218,13 +214,13 @@ where
     pub async fn recv(&mut self) -> Result<N::HeaderResponse, HttpSubscriptionError> {
         let block_hash = self.receiver.recv().await.ok_or(HttpSubscriptionError::Closed)?;
 
-        let block = tokio::time::timeout(
-            self.call_timeout,
-            self.provider.get_block_by_hash(block_hash),
-        )
-        .await
-        .map_err(|_| HttpSubscriptionError::Timeout)?
-        .map_err(|_| HttpSubscriptionError::BlockFetchFailed("Failed to fetch block".to_string()))?;
+        let block =
+            tokio::time::timeout(self.call_timeout, self.provider.get_block_by_hash(block_hash))
+                .await
+                .map_err(|_| HttpSubscriptionError::Timeout)?
+                .map_err(|_| {
+                    HttpSubscriptionError::BlockFetchFailed("Failed to fetch block".to_string())
+                })?;
         Ok(block.header().clone())
     }
 
@@ -249,8 +245,9 @@ mod tests {
     use super::*;
     use crate::RobustProviderBuilder;
     use alloy::{
-        consensus::BlockHeader, node_bindings::Anvil,
-        providers::{ext::AnvilApi, ProviderBuilder},
+        consensus::BlockHeader,
+        node_bindings::Anvil,
+        providers::{ProviderBuilder, ext::AnvilApi},
     };
     use std::time::Duration;
 

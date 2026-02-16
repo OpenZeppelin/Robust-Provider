@@ -535,8 +535,7 @@ impl<N: Network> RobustProvider<N> {
             );
 
             // Try HTTP polling on primary first
-            let http_sub_result =
-                HttpPollingSubscription::new(self.clone(), config.clone()).await;
+            let http_sub_result = HttpPollingSubscription::new(self.clone(), config.clone()).await;
 
             if let Ok(http_sub) = http_sub_result {
                 return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
@@ -552,9 +551,7 @@ impl<N: Network> RobustProvider<N> {
                 // Try WebSocket subscription if supported
                 if provider.client().pubsub_frontend().is_some() {
                     let operation = move |p: RootProvider<N>| async move {
-                        p.subscribe_blocks()
-                            .channel_size(self.subscription_buffer_capacity)
-                            .await
+                        p.subscribe_blocks().channel_size(self.subscription_buffer_capacity).await
                     };
 
                     if let Ok(sub) = self.try_provider_with_timeout(provider, &operation).await {
@@ -571,9 +568,9 @@ impl<N: Network> RobustProvider<N> {
             return Err(match last_error {
                 Some(HttpSubscriptionError::RpcError(e)) => Error::RpcError(e),
                 Some(HttpSubscriptionError::Timeout) => Error::Timeout,
-                Some(e) => Error::RpcError(std::sync::Arc::new(
-                    RpcError::LocalUsageError(Box::new(e)),
-                )),
+                Some(e) => {
+                    Error::RpcError(std::sync::Arc::new(RpcError::LocalUsageError(Box::new(e))))
+                }
                 None => Error::Timeout,
             });
         }

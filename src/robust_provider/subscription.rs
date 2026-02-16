@@ -260,8 +260,11 @@ impl<N: Network> RobustSubscription<N> {
                     .await;
 
             if matches!(validation, Ok(Ok(_))) {
-                if let Ok(http_sub) =
-                    HttpPollingSubscription::new(self.robust_provider.clone(), self.http_config.clone()).await
+                if let Ok(http_sub) = HttpPollingSubscription::new(
+                    self.robust_provider.clone(),
+                    self.http_config.clone(),
+                )
+                .await
                 {
                     info!("Reconnected to primary provider (HTTP polling)");
                     self.backend = SubscriptionBackend::HttpPolling(http_sub);
@@ -312,8 +315,11 @@ impl<N: Network> RobustSubscription<N> {
             // Try HTTP polling if enabled
             #[cfg(feature = "http-subscription")]
             if self.robust_provider.allow_http_subscriptions {
-                if let Ok(http_sub) =
-                    HttpPollingSubscription::new(self.robust_provider.clone(), self.http_config.clone()).await
+                if let Ok(http_sub) = HttpPollingSubscription::new(
+                    self.robust_provider.clone(),
+                    self.http_config.clone(),
+                )
+                .await
                 {
                     info!(
                         fallback_index = idx,

@@ -120,9 +120,9 @@ pub(crate) fn is_retryable_error(code: i64, message: &str) -> bool {
 }
 
 pub(crate) fn is_block_not_found(code: i64, message: &str) -> bool {
-    geth::is_block_not_found(code, message) ||
-        besu::is_block_not_found(code, message) ||
-        anvil::is_block_not_found(code, message)
+    geth::is_block_not_found(code, message)
+        || besu::is_block_not_found(code, message)
+        || anvil::is_block_not_found(code, message)
 }
 
 pub(crate) fn is_invalid_log_filter(code: i64, message: &str) -> bool {
