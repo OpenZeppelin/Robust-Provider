@@ -35,16 +35,17 @@
 //! # Ok(()) }
 //! ```
 
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use alloy::{
     network::{BlockResponse, Network},
     primitives::BlockHash,
-    providers::{Provider, RootProvider},
+    providers::Provider,
     transports::{RpcError, TransportErrorKind},
 };
 use futures_util::{StreamExt, stream};
 use tokio::sync::mpsc;
+use crate::RobustProvider;
 
 /// Default polling interval for HTTP subscriptions.
 ///
@@ -134,7 +135,9 @@ pub struct HttpPollingSubscription<N: Network> {
     /// Receiver for block hashes from the poller
     receiver: mpsc::Receiver<BlockHash>,
     /// Provider used to fetch block headers from hashes
-    provider: RootProvider<N>,
+    provider: RobustProvider<N>,
+    /// Timeout for individual RPC calls
+    call_timeout: Duration,
 }
 
 impl<N: Network + 'static> HttpPollingSubscription<N>
@@ -153,11 +156,14 @@ where
     /// # Example
     ///
     /// ```rust,no_run
+    /// use robust_provider::{RobustProvider, RobustProviderBuilder};
     /// use robust_provider::robust_provider::http_subscription::{HttpPollingSubscription, HttpSubscriptionConfig};
-    /// use alloy::{network::Ethereum, providers::RootProvider};
+    /// use alloy::providers::ProviderBuilder;
     /// use std::time::Duration;
     ///
-    /// # async fn example(provider: RootProvider<Ethereum>) -> anyhow::Result<()> {
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let http = ProviderBuilder::new().connect_http("http://localhost:8545".parse()?)?;
+    /// let provider = RobustProviderBuilder::new(http).build().await?;
     /// let config = HttpSubscriptionConfig {
     ///     poll_interval: Duration::from_secs(6),
     ///     ..Default::default()
@@ -167,12 +173,13 @@ where
     /// # }
     /// ```
     pub async fn new(
-        provider: RootProvider<N>,
+        provider: RobustProvider<N>,
         config: HttpSubscriptionConfig,
     ) -> Result<Self, HttpSubscriptionError> {
         let (sender, receiver) = mpsc::channel(config.buffer_capacity);
 
         let poller = provider
+            .primary()
             .watch_blocks()
             .await
             .map_err(HttpSubscriptionError::from)?
@@ -182,7 +189,7 @@ where
         let stream = poller.into_stream().flat_map(stream::iter);
         tokio::spawn(async move {
             let mut stream = stream;
-            let mut sender = sender;
+            let sender = sender;
             while let Some(hash) = stream.next().await {
                 if sender.send(hash).await.is_err() {
                     // Receiver dropped, stop polling
@@ -191,7 +198,11 @@ where
             }
         });
 
-        Ok(Self { receiver, provider })
+        Ok(Self {
+            receiver,
+            provider,
+            call_timeout: config.call_timeout,
+        })
     }
 
     /// Receive the next block header.
@@ -207,18 +218,20 @@ where
     pub async fn recv(&mut self) -> Result<N::HeaderResponse, HttpSubscriptionError> {
         let block_hash = self.receiver.recv().await.ok_or(HttpSubscriptionError::Closed)?;
 
-        let block = self
-            .provider
-            .get_block_by_hash(block_hash)
-            .await?
-            .ok_or(HttpSubscriptionError::BlockFetchFailed("Block not found".into()))?;
+        let block = tokio::time::timeout(
+            self.call_timeout,
+            self.provider.get_block_by_hash(block_hash),
+        )
+        .await
+        .map_err(|_| HttpSubscriptionError::Timeout)?
+        .map_err(|_| HttpSubscriptionError::BlockFetchFailed("Failed to fetch block".to_string()))?;
         Ok(block.header().clone())
     }
 
     /// Check if the subscription channel is empty (no pending messages).
     #[must_use]
-    pub fn is_empty(&mut self) -> bool {
-        self.receiver.is_closed() || self.receiver.capacity() == 0
+    pub fn is_empty(&self) -> bool {
+        self.receiver.is_empty()
     }
 }
 
@@ -234,8 +247,10 @@ impl<N: Network> std::fmt::Debug for HttpPollingSubscription<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RobustProviderBuilder;
     use alloy::{
-        consensus::BlockHeader, network::Ethereum, node_bindings::Anvil, providers::ext::AnvilApi,
+        consensus::BlockHeader, node_bindings::Anvil,
+        providers::{ext::AnvilApi, ProviderBuilder},
     };
     use std::time::Duration;
 
@@ -250,7 +265,8 @@ mod tests {
     #[tokio::test]
     async fn test_http_polling_receives_new_block() -> anyhow::Result<()> {
         let anvil = Anvil::new().try_spawn()?;
-        let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
+        let root_provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+        let provider = RobustProviderBuilder::new(root_provider.clone()).build().await?;
 
         let config = HttpSubscriptionConfig {
             poll_interval: Duration::from_millis(50),
@@ -258,10 +274,10 @@ mod tests {
             buffer_capacity: 16,
         };
 
-        let mut sub = HttpPollingSubscription::new(provider.clone(), config).await?;
+        let mut sub = HttpPollingSubscription::new(provider, config).await?;
 
         // Mine a block
-        provider.anvil_mine(Some(1), None).await?;
+        root_provider.anvil_mine(Some(1), None).await?;
 
         // Should receive the newly mined block
         let result = tokio::time::timeout(Duration::from_secs(2), sub.recv()).await;
@@ -275,7 +291,8 @@ mod tests {
     #[tokio::test]
     async fn test_http_polling_receives_new_blocks() -> anyhow::Result<()> {
         let anvil = Anvil::new().try_spawn()?;
-        let provider: RootProvider<Ethereum> = RootProvider::new_http(anvil.endpoint_url());
+        let root_provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+        let provider = RobustProviderBuilder::new(root_provider.clone()).build().await?;
 
         let config = HttpSubscriptionConfig {
             poll_interval: Duration::from_millis(50),
@@ -283,10 +300,10 @@ mod tests {
             buffer_capacity: 16,
         };
 
-        let mut sub = HttpPollingSubscription::new(provider.clone(), config).await?;
+        let mut sub = HttpPollingSubscription::new(provider, config).await?;
 
         // Mine a new block
-        provider.anvil_mine(Some(1), None).await?;
+        root_provider.anvil_mine(Some(1), None).await?;
 
         // Should receive block 1
         let block = tokio::time::timeout(Duration::from_secs(2), sub.recv())
@@ -296,7 +313,7 @@ mod tests {
         assert_eq!(block.number(), 1);
 
         // Mine another block
-        provider.anvil_mine(Some(1), None).await?;
+        root_provider.anvil_mine(Some(1), None).await?;
 
         // Should receive block 2
         let block = tokio::time::timeout(Duration::from_secs(2), sub.recv())

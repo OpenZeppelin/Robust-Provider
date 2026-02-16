@@ -536,21 +536,20 @@ impl<N: Network> RobustProvider<N> {
 
             // Try HTTP polling on primary first
             let http_sub_result =
-                HttpPollingSubscription::new(self.primary().clone(), config.clone()).await;
+                HttpPollingSubscription::new(self.clone(), config.clone()).await;
 
             if let Ok(http_sub) = http_sub_result {
                 return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
             }
 
             // Track the last error for proper error reporting
-            let mut last_error: Option<HttpSubscriptionError> = http_sub_result.err();
+            let last_error: Option<HttpSubscriptionError> = http_sub_result.err();
 
             warn!("HTTP subscription on primary failed, trying fallback providers");
 
-            // Primary HTTP subscription failed, try fallback providers
-            // Try WebSocket first, then HTTP polling
+            // Primary HTTP subscription failed, try WebSocket on fallback providers
             for (fallback_idx, provider) in self.fallback_providers().iter().enumerate() {
-                // Try WebSocket subscription first if supported
+                // Try WebSocket subscription if supported
                 if provider.client().pubsub_frontend().is_some() {
                     let operation = move |p: RootProvider<N>| async move {
                         p.subscribe_blocks()
@@ -564,20 +563,6 @@ impl<N: Network> RobustProvider<N> {
                             "Subscription switched to fallback provider (WebSocket)"
                         );
                         return Ok(RobustSubscription::new(sub, self.clone()));
-                    }
-                }
-
-                // Try HTTP polling on fallback
-                match HttpPollingSubscription::new(provider.clone(), config.clone()).await {
-                    Ok(http_sub) => {
-                        info!(
-                            fallback_index = fallback_idx,
-                            "Subscription switched to fallback provider (HTTP polling)"
-                        );
-                        return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
-                    }
-                    Err(e) => {
-                        last_error = Some(e);
                     }
                 }
             }
