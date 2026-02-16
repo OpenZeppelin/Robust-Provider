@@ -14,11 +14,15 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! use alloy::providers::ProviderBuilder;
 //! use robust_provider::RobustProviderBuilder;
 //! use std::time::Duration;
 //!
-//! let robust = RobustProviderBuilder::new(http_provider)
+//! # async fn example() -> anyhow::Result<()> {
+//! let http = ProviderBuilder::new().connect_http("http://localhost:8545")?;
+//!
+//! let robust = RobustProviderBuilder::new(http)
 //!     .allow_http_subscriptions(true)
 //!     .poll_interval(Duration::from_secs(12))
 //!     .build()
@@ -28,6 +32,7 @@
 //! while let Ok(block) = subscription.recv().await {
 //!     println!("New block: {}", block.number);
 //! }
+//! # Ok(()) }
 //! ```
 
 use std::{pin::Pin, sync::Arc, time::Duration};
@@ -38,13 +43,20 @@ use alloy::{
     providers::{Provider, RootProvider},
     transports::{RpcError, TransportErrorKind},
 };
-use futures_util::{FutureExt, Stream, StreamExt, stream};
+use futures_util::{StreamExt, stream};
+use tokio::sync::mpsc;
 
 /// Default polling interval for HTTP subscriptions.
 ///
 /// Set to 12 seconds to match approximate Ethereum mainnet block time.
 /// Adjust based on the target chain's block time.
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(12);
+
+/// Default timeout for individual RPC calls during HTTP polling.
+pub const DEFAULT_CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Default buffer capacity for the internal subscription channel.
+pub const DEFAULT_BUFFER_CAPACITY: usize = 128;
 
 /// Errors specific to HTTP polling subscriptions.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -82,12 +94,12 @@ pub struct HttpSubscriptionConfig {
 
     /// Timeout for individual RPC calls.
     ///
-    /// Default: 30 seconds
+    /// Default: [`DEFAULT_CALL_TIMEOUT`] (30 seconds)
     pub call_timeout: Duration,
 
     /// Buffer size for the internal channel.
     ///
-    /// Default: 128
+    /// Default: [`DEFAULT_BUFFER_CAPACITY`] (128)
     pub buffer_capacity: usize,
 }
 
@@ -95,8 +107,8 @@ impl Default for HttpSubscriptionConfig {
     fn default() -> Self {
         Self {
             poll_interval: DEFAULT_POLL_INTERVAL,
-            call_timeout: Duration::from_secs(30),
-            buffer_capacity: 128,
+            call_timeout: DEFAULT_CALL_TIMEOUT,
+            buffer_capacity: DEFAULT_BUFFER_CAPACITY,
         }
     }
 }
@@ -109,22 +121,20 @@ impl Default for HttpSubscriptionConfig {
 ///
 /// # How It Works
 ///
-/// Uses alloy's `watch_blocks()`, which:
+/// Uses alloy's [`watch_blocks()`](alloy::providers::Provider::watch_blocks), which:
 /// 1. Creates a block filter via `eth_newBlockFilter`
 /// 2. Polls `eth_getFilterChanges` at `poll_interval` to get new block hashes
 /// 3. Fetches full block headers for each hash
 ///
 /// # Trade-offs
 ///
-/// - **Latency**: New blocks are detected with up to `poll_interval` delay
-/// - **RPC Load**: One filter poll per interval, plus one `get_block_by_hash` per new block
+/// * **Latency**: New blocks are detected with up to `poll_interval` delay
+/// * **RPC Load**: One filter poll per interval, plus one `get_block_by_hash` per new block
 pub struct HttpPollingSubscription<N: Network> {
-    /// Stream of block hashes from the poller
-    stream: Pin<Box<dyn Stream<Item = BlockHash> + Send>>,
+    /// Receiver for block hashes from the poller
+    receiver: mpsc::Receiver<BlockHash>,
     /// Provider used to fetch block headers from hashes
     provider: RootProvider<N>,
-    /// Buffer
-    buffer: Option<BlockHash>,
 }
 
 impl<N: Network + 'static> HttpPollingSubscription<N>
@@ -142,25 +152,46 @@ where
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust,no_run
+    /// use robust_provider::robust_provider::http_subscription::{HttpPollingSubscription, HttpSubscriptionConfig};
+    /// use alloy::{network::Ethereum, providers::RootProvider};
+    /// use std::time::Duration;
+    ///
+    /// # async fn example(provider: RootProvider<Ethereum>) -> anyhow::Result<()> {
     /// let config = HttpSubscriptionConfig {
     ///     poll_interval: Duration::from_secs(6),
     ///     ..Default::default()
     /// };
     /// let mut sub = HttpPollingSubscription::new(provider, config).await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn new(
         provider: RootProvider<N>,
         config: HttpSubscriptionConfig,
     ) -> Result<Self, HttpSubscriptionError> {
+        let (sender, receiver) = mpsc::channel(config.buffer_capacity);
+
         let poller = provider
             .watch_blocks()
             .await
             .map_err(HttpSubscriptionError::from)?
             .with_poll_interval(config.poll_interval);
-        let stream = poller.into_stream().flat_map(stream::iter);
 
-        Ok(Self { stream: Box::pin(stream), provider, buffer: None })
+        // Spawn a task to forward block hashes to the channel
+        let stream = poller.into_stream().flat_map(stream::iter);
+        tokio::spawn(async move {
+            let mut stream = stream;
+            let mut sender = sender;
+            while let Some(hash) = stream.next().await {
+                if sender.send(hash).await.is_err() {
+                    // Receiver dropped, stop polling
+                    break;
+                }
+            }
+        });
+
+        Ok(Self { receiver, provider })
     }
 
     /// Receive the next block header.
@@ -169,16 +200,12 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`HttpSubscriptionError::Closed`] if the subscription channel is closed.
-    /// Returns [`HttpSubscriptionError::Timeout`] or [`HttpSubscriptionError::RpcError`]
-    /// if the polling task encountered an error.
+    /// * [`HttpSubscriptionError::Closed`] - if the subscription channel is closed.
+    /// * [`HttpSubscriptionError::Timeout`] - if the polling operation times out.
+    /// * [`HttpSubscriptionError::RpcError`] - if an RPC error occurs during polling.
+    /// * [`HttpSubscriptionError::BlockFetchFailed`] - if the block fetch fails.
     pub async fn recv(&mut self) -> Result<N::HeaderResponse, HttpSubscriptionError> {
-        // Check buffer first, otherwise read from stream
-        let block_hash = if let Some(hash) = self.buffer.take() {
-            hash
-        } else {
-            self.stream.next().await.ok_or(HttpSubscriptionError::Closed)?
-        };
+        let block_hash = self.receiver.recv().await.ok_or(HttpSubscriptionError::Closed)?;
 
         let block = self
             .provider
@@ -189,25 +216,9 @@ where
     }
 
     /// Check if the subscription channel is empty (no pending messages).
-    ///
-    /// If buffer has an item, returns `false`.
-    /// Otherwise, tries to read from stream and buffers the result.
     #[must_use]
     pub fn is_empty(&mut self) -> bool {
-        // If buffer already has something
-        if self.buffer.is_some() {
-            return false;
-        }
-
-        // Try to get next item
-        match self.stream.next().now_or_never() {
-            Some(Some(hash)) => {
-                self.buffer = Some(hash);
-                false
-            }
-            Some(None) => true,
-            None => true,
-        }
+        self.receiver.is_closed() || self.receiver.capacity() == 0
     }
 }
 
@@ -232,8 +243,8 @@ mod tests {
     async fn test_http_polling_config_defaults() {
         let config = HttpSubscriptionConfig::default();
         assert_eq!(config.poll_interval, DEFAULT_POLL_INTERVAL);
-        assert_eq!(config.call_timeout, Duration::from_secs(30));
-        assert_eq!(config.buffer_capacity, 128);
+        assert_eq!(config.call_timeout, DEFAULT_CALL_TIMEOUT);
+        assert_eq!(config.buffer_capacity, DEFAULT_BUFFER_CAPACITY);
     }
 
     #[tokio::test]

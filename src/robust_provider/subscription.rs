@@ -79,7 +79,7 @@ impl From<HttpSubscriptionError> for Error {
 pub const DEFAULT_RECONNECT_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Timeout for validating HTTP provider reachability during reconnection
-const HTTP_RECONNECT_VALIDATION_TIMEOUT: Duration = Duration::from_millis(150);
+pub const HTTP_RECONNECT_VALIDATION_TIMEOUT: Duration = Duration::from_millis(150);
 
 /// Backend for subscriptions - either native WebSocket or HTTP polling.
 ///
