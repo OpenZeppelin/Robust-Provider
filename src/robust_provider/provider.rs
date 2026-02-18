@@ -498,85 +498,22 @@ impl<N: Network> RobustProvider<N> {
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
     pub async fn subscribe_blocks(&self) -> Result<RobustSubscription<N>, Error> {
-        // Check if primary supports native pubsub (WebSocket)
-        let primary_supports_pubsub = self.primary().client().pubsub_frontend().is_some();
-
-        if primary_supports_pubsub {
-            // Try WebSocket subscription on primary and fallbacks
-            let subscription = self
-                .try_operation_with_failover(
-                    move |provider| async move {
-                        provider
-                            .subscribe_blocks()
-                            .channel_size(self.subscription_buffer_capacity)
-                            .await
-                    },
-                    true, // require_pubsub
-                )
-                .await?;
-
-            return Ok(RobustSubscription::new(subscription, self.clone()));
-        }
-
-        // Primary doesn't support pubsub - try HTTP polling if enabled
         #[cfg(feature = "http-subscription")]
-        if self.allow_http_subscriptions {
-            use crate::robust_provider::http_subscription::HttpSubscriptionError;
-
-            let config = HttpSubscriptionConfig {
-                poll_interval: self.poll_interval,
-                call_timeout: self.call_timeout,
-                buffer_capacity: self.subscription_buffer_capacity,
-            };
-
-            info!(
-                poll_interval_ms = self.poll_interval.as_millis(),
-                "Starting HTTP polling subscription on primary provider"
-            );
-
-            // Try HTTP polling on primary first
-            let http_sub_result = HttpPollingSubscription::new(self.clone(), config.clone()).await;
-
-            if let Ok(http_sub) = http_sub_result {
-                return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
+        {
+            let primary_supports_pubsub = self.primary().client().pubsub_frontend().is_some();
+            if primary_supports_pubsub {
+                return self.subscribe_blocks_ws().await;
+            } else {
+                return self.subscribe_blocks_http().await;
             }
-
-            // Track the last error for proper error reporting
-            let last_error: Option<HttpSubscriptionError> = http_sub_result.err();
-
-            warn!("HTTP subscription on primary failed, trying fallback providers");
-
-            // Primary HTTP subscription failed, try WebSocket on fallback providers
-            for (fallback_idx, provider) in self.fallback_providers().iter().enumerate() {
-                // Try WebSocket subscription if supported
-                if provider.client().pubsub_frontend().is_some() {
-                    let operation = move |p: RootProvider<N>| async move {
-                        p.subscribe_blocks().channel_size(self.subscription_buffer_capacity).await
-                    };
-
-                    if let Ok(sub) = self.try_provider_with_timeout(provider, &operation).await {
-                        info!(
-                            fallback_index = fallback_idx,
-                            "Subscription switched to fallback provider (WebSocket)"
-                        );
-                        return Ok(RobustSubscription::new(sub, self.clone()));
-                    }
-                }
-            }
-
-            // All providers exhausted - return the actual error instead of generic Timeout
-            return Err(match last_error {
-                Some(HttpSubscriptionError::RpcError(e)) => Error::RpcError(e),
-                Some(HttpSubscriptionError::Timeout) => Error::Timeout,
-                Some(e) => {
-                    Error::RpcError(std::sync::Arc::new(RpcError::LocalUsageError(Box::new(e))))
-                }
-                None => Error::Timeout,
-            });
         }
 
-        // Primary doesn't support pubsub and HTTP subscriptions not enabled
-        // Try fallback providers that support pubsub
+        #[cfg(not(feature = "http-subscription"))]
+        self.subscribe_blocks_ws().await
+    }
+
+    /// Subscribe to new block headers using WebSocket with failover.
+    async fn subscribe_blocks_ws(&self) -> Result<RobustSubscription<N>, Error> {
         let subscription = self
             .try_operation_with_failover(
                 move |provider| async move {
@@ -590,6 +527,66 @@ impl<N: Network> RobustProvider<N> {
             .await?;
 
         Ok(RobustSubscription::new(subscription, self.clone()))
+    }
+
+    /// Subscribe to new block headers using HTTP polling.
+    /// Falls back to WebSocket if HTTP polling fails.
+    #[cfg(feature = "http-subscription")]
+    async fn subscribe_blocks_http(&self) -> Result<RobustSubscription<N>, Error> {
+        use crate::robust_provider::http_subscription::HttpSubscriptionError;
+
+        if !self.allow_http_subscriptions {
+            return self.subscribe_blocks_ws().await;
+        }
+
+        let config = HttpSubscriptionConfig {
+            poll_interval: self.poll_interval,
+            call_timeout: self.call_timeout,
+            buffer_capacity: self.subscription_buffer_capacity,
+        };
+
+        info!(
+            poll_interval_ms = self.poll_interval.as_millis(),
+            "Starting HTTP polling subscription on primary provider"
+        );
+
+        // Try HTTP polling on primary first
+        let http_sub_result = HttpPollingSubscription::new(self.clone(), config.clone()).await;
+
+        if let Ok(http_sub) = http_sub_result {
+            return Ok(RobustSubscription::new_http(http_sub, self.clone(), config));
+        }
+
+        // Track the last error for proper error reporting
+        let last_error: Option<HttpSubscriptionError> = http_sub_result.err();
+
+        warn!("HTTP subscription on primary failed, trying fallback providers");
+
+        // Primary HTTP subscription failed, try WebSocket on fallback providers
+        for (fallback_idx, provider) in self.fallback_providers().iter().enumerate() {
+            // Try WebSocket subscription if supported
+            if provider.client().pubsub_frontend().is_some() {
+                let operation = move |p: RootProvider<N>| async move {
+                    p.subscribe_blocks().channel_size(self.subscription_buffer_capacity).await
+                };
+
+                if let Ok(sub) = self.try_provider_with_timeout(provider, &operation).await {
+                    info!(
+                        fallback_index = fallback_idx,
+                        "Subscription switched to fallback provider (WebSocket)"
+                    );
+                    return Ok(RobustSubscription::new(sub, self.clone()));
+                }
+            }
+        }
+
+        // All providers exhausted - return the actual error instead of generic Timeout
+        Err(match last_error {
+            Some(HttpSubscriptionError::RpcError(e)) => Error::RpcError(e),
+            Some(HttpSubscriptionError::Timeout) => Error::Timeout,
+            Some(e) => Error::RpcError(std::sync::Arc::new(RpcError::LocalUsageError(Box::new(e)))),
+            None => Error::Timeout,
+        })
     }
 
     /// Execute `operation` with exponential backoff and a total timeout.

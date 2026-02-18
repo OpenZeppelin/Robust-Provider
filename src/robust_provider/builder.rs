@@ -164,9 +164,9 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
     ///
     /// # Trade-offs
     ///
-    /// - **Latency**: New blocks detected with up to `poll_interval` delay
-    /// - **RPC Load**: Generates one RPC call per `poll_interval`
-    /// - **Missed Blocks**: If `poll_interval` > block time, intermediate blocks may be missed
+    /// * **Latency**: New blocks detected with up to `poll_interval` delay
+    /// * **RPC Load**: Generates one RPC call per `poll_interval`
+    /// * **Missed Blocks**: If `poll_interval` > block time, intermediate blocks may be missed
     ///
     /// # Feature Flag
     ///

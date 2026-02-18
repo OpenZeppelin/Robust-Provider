@@ -136,8 +136,6 @@ pub struct HttpPollingSubscription<N: Network> {
     receiver: mpsc::Receiver<BlockHash>,
     /// Provider used to fetch block headers from hashes
     provider: RobustProvider<N>,
-    /// Timeout for individual RPC calls
-    call_timeout: Duration,
 }
 
 impl<N: Network + 'static> HttpPollingSubscription<N>
@@ -183,7 +181,8 @@ where
             .watch_blocks()
             .await
             .map_err(HttpSubscriptionError::from)?
-            .with_poll_interval(config.poll_interval);
+            .with_poll_interval(config.poll_interval)
+            .with_channel_size(config.buffer_capacity);
 
         // Spawn a task to forward block hashes to the channel
         let stream = poller.into_stream().flat_map(stream::iter);
@@ -198,7 +197,7 @@ where
             }
         });
 
-        Ok(Self { receiver, provider, call_timeout: config.call_timeout })
+        Ok(Self { receiver, provider })
     }
 
     /// Receive the next block header.
@@ -214,13 +213,13 @@ where
     pub async fn recv(&mut self) -> Result<N::HeaderResponse, HttpSubscriptionError> {
         let block_hash = self.receiver.recv().await.ok_or(HttpSubscriptionError::Closed)?;
 
-        let block =
-            tokio::time::timeout(self.call_timeout, self.provider.get_block_by_hash(block_hash))
-                .await
-                .map_err(|_| HttpSubscriptionError::Timeout)?
-                .map_err(|_| {
-                    HttpSubscriptionError::BlockFetchFailed("Failed to fetch block".to_string())
-                })?;
+        let block = self.provider.get_block_by_hash(block_hash).await.map_err(|e| match e {
+            crate::Error::Timeout => HttpSubscriptionError::Timeout,
+            crate::Error::BlockNotFound => {
+                HttpSubscriptionError::BlockFetchFailed("Block not found".to_string())
+            }
+            crate::Error::RpcError(rpc_err) => HttpSubscriptionError::RpcError(rpc_err),
+        })?;
         Ok(block.header().clone())
     }
 
