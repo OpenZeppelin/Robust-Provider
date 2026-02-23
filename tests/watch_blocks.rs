@@ -26,7 +26,7 @@ macro_rules! assert_next {
 
 #[tokio::test]
 async fn watch_blocks_returns_hashes_on_primary() -> anyhow::Result<()> {
-    let (anvil, robust, alloy_provider) = common::setup_anvil().await?;
+    let (_anvil, robust, alloy_provider) = common::setup_anvil().await?;
 
     let poller = robust.watch_blocks().await?;
     let mut stream = poller.with_poll_interval(Duration::from_millis(50)).into_stream();
@@ -37,7 +37,6 @@ async fn watch_blocks_returns_hashes_on_primary() -> anyhow::Result<()> {
 
     assert_next!(stream, vec![block.header.hash]);
 
-    drop(anvil);
     Ok(())
 }
 
@@ -68,7 +67,6 @@ async fn watch_blocks_fails_over_when_primary_is_down() -> anyhow::Result<()> {
 
     assert_next!(stream, vec![block.header.hash]);
 
-    drop(anvil_fallback);
     Ok(())
 }
 
