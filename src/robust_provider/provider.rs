@@ -504,10 +504,7 @@ impl<N: Network> RobustProvider<N> {
     /// Poll new block hashes with automatic failover.
     ///
     /// Returns a [`PollerBuilder`] that can be used to build a polling stream of
-    /// block hashes. The underlying polling RPC calls are executed via
-    /// [`try_operation_with_failover`], which:
-    /// * Switches to fallback providers on failures
-    /// * Applies the same timeout and retry logic as other robust calls
+    /// block hashes.
     ///
     /// This is a wrapper function for [`Provider::watch_blocks`].
     ///
