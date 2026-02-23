@@ -12,7 +12,8 @@ use alloy::{
     eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
     network::{BlockResponse, Ethereum, Network},
     primitives::{
-        Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
+        Address, B256, BlockHash, BlockNumber, Bytes, FixedBytes, StorageKey, StorageValue, TxHash,
+        U256,
     },
     providers::{
         PendingTransactionBuilder, Provider, RootProvider,
@@ -22,6 +23,7 @@ use alloy::{
         },
     },
     rpc::{
+        client::PollerBuilder,
         json_rpc::{RpcRecv, RpcSend},
         types::{
             AccessListResult, AccountInfo, Bundle, EIP1186AccountProofResponse, EthCallResponse,
@@ -498,6 +500,17 @@ impl<N: Network> RobustProvider<N> {
             .await?;
 
         Ok(RobustSubscription::new(subscription, self.clone()))
+    }
+
+    pub async fn watch_blocks(&self) -> Result<PollerBuilder<(U256,), Vec<FixedBytes<32>>>, Error> {
+        let poller_builder = self
+            .try_operation_with_failover(
+                move |provider| async move { provider.watch_blocks().await },
+                false,
+            )
+            .await?;
+
+        Ok(poller_builder)
     }
 
     /// Execute `operation` with exponential backoff and a total timeout.
