@@ -22,6 +22,7 @@ use alloy::{
         },
     },
     rpc::{
+        client::PollerBuilder,
         json_rpc::{RpcRecv, RpcSend},
         types::{
             AccessListResult, AccountInfo, Bundle, EIP1186AccountProofResponse, EthCallResponse,
@@ -471,7 +472,7 @@ impl<N: Network> RobustProvider<N> {
 
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
-    /// Returns a `RobustSubscription` that automatically:
+    /// Returns a [`RobustSubscription`] that automatically:
     /// * Handles connection errors by switching to fallback providers
     /// * Detects and recovers from lagged subscriptions
     /// * Periodically attempts to reconnect to the primary provider
@@ -498,6 +499,30 @@ impl<N: Network> RobustProvider<N> {
             .await?;
 
         Ok(RobustSubscription::new(subscription, self.clone()))
+    }
+
+    /// Poll new block hashes with automatic failover.
+    ///
+    /// Returns a [`PollerBuilder`] that can be used to build a polling stream of
+    /// block hashes.
+    ///
+    /// This is a wrapper function for [`Provider::watch_blocks`].
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
+    pub async fn watch_blocks(&self) -> Result<PollerBuilder<(U256,), Vec<BlockHash>>, Error> {
+        let poller_builder = self
+            .try_operation_with_failover(
+                move |provider| async move { provider.watch_blocks().await },
+                false,
+            )
+            .await?;
+
+        Ok(poller_builder)
     }
 
     /// Execute `operation` with exponential backoff and a total timeout.
