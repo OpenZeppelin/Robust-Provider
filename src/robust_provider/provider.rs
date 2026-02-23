@@ -473,7 +473,7 @@ impl<N: Network> RobustProvider<N> {
 
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
-    /// Returns a `RobustSubscription` that automatically:
+    /// Returns a [`RobustSubscription`] that automatically:
     /// * Handles connection errors by switching to fallback providers
     /// * Detects and recovers from lagged subscriptions
     /// * Periodically attempts to reconnect to the primary provider
@@ -502,6 +502,22 @@ impl<N: Network> RobustProvider<N> {
         Ok(RobustSubscription::new(subscription, self.clone()))
     }
 
+    /// Poll new block hashes with automatic failover.
+    ///
+    /// Returns a [`PollerBuilder`] that can be used to build a polling stream of
+    /// block hashes. The underlying polling RPC calls are executed via
+    /// [`try_operation_with_failover`], which:
+    /// * Switches to fallback providers on failures
+    /// * Applies the same timeout and retry logic as other robust calls
+    ///
+    /// This is a wrapper function for [`Provider::watch_blocks`].
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::RpcError`] - if no fallback providers succeeded; contains the last error returned
+    ///   by the last provider attempted on the last retry.
+    /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    ///   `call_timeout`).
     pub async fn watch_blocks(&self) -> Result<PollerBuilder<(U256,), Vec<FixedBytes<32>>>, Error> {
         let poller_builder = self
             .try_operation_with_failover(
