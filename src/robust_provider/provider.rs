@@ -12,8 +12,7 @@ use alloy::{
     eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
     network::{BlockResponse, Ethereum, Network},
     primitives::{
-        Address, B256, BlockHash, BlockNumber, Bytes, FixedBytes, StorageKey, StorageValue, TxHash,
-        U256,
+        Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U256,
     },
     providers::{
         PendingTransactionBuilder, Provider, RootProvider,
@@ -518,7 +517,7 @@ impl<N: Network> RobustProvider<N> {
     ///   by the last provider attempted on the last retry.
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
-    pub async fn watch_blocks(&self) -> Result<PollerBuilder<(U256,), Vec<FixedBytes<32>>>, Error> {
+    pub async fn watch_blocks(&self) -> Result<PollerBuilder<(U256,), Vec<BlockHash>>, Error> {
         let poller_builder = self
             .try_operation_with_failover(
                 move |provider| async move { provider.watch_blocks().await },
