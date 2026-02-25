@@ -22,6 +22,7 @@ use alloy::{
         },
     },
     rpc::{
+        client::PollerBuilder,
         json_rpc::{RpcRecv, RpcSend},
         types::{
             AccessListResult, AccountInfo, Bundle, EIP1186AccountProofResponse, EthCallResponse,
@@ -480,7 +481,7 @@ impl<N: Network> RobustProvider<N> {
 
     /// Subscribe to new block headers with automatic failover and reconnection.
     ///
-    /// Returns a `RobustSubscription` that automatically:
+    /// Returns a [`RobustSubscription`] that automatically:
     /// * Handles connection errors by switching to fallback providers
     /// * Detects and recovers from lagged subscriptions
     /// * Periodically attempts to reconnect to the primary provider
@@ -528,6 +529,8 @@ impl<N: Network> RobustProvider<N> {
 
         Ok(RobustSubscription::new(subscription, self.clone()))
     }
+
+    robust_rpc!(fn watch_blocks() -> PollerBuilder<(U256,), Vec<BlockHash>>);
 
     /// Subscribe to new block headers using HTTP polling.
     /// Falls back to WebSocket if HTTP polling fails.
