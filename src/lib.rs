@@ -73,5 +73,6 @@ pub use robust_provider::{
 
 #[cfg(feature = "http-subscription")]
 pub use robust_provider::{
-    DEFAULT_POLL_INTERVAL, HttpPollingSubscription, HttpSubscriptionConfig, HttpSubscriptionError,
+    DEFAULT_BUFFER_CAPACITY, DEFAULT_POLL_INTERVAL, HttpPollingSubscription,
+    HttpSubscriptionConfig, HttpSubscriptionError,
 };

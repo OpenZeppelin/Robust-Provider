@@ -78,7 +78,7 @@ async fn test_successful_subscription_on_primary() -> anyhow::Result<()> {
         .build()
         .await?;
 
-    let mut subscription = robust.subscribe_blocks().await?;
+    let subscription = robust.subscribe_blocks().await?;
     // Subscription is created successfully - is_empty() returns true initially (no pending
     // messages)
     assert!(subscription.is_empty());

@@ -31,7 +31,8 @@ pub use builder::*;
 pub use errors::{CoreError, Error};
 #[cfg(feature = "http-subscription")]
 pub use http_subscription::{
-    DEFAULT_POLL_INTERVAL, HttpPollingSubscription, HttpSubscriptionConfig, HttpSubscriptionError,
+    DEFAULT_BUFFER_CAPACITY, DEFAULT_CALL_TIMEOUT, DEFAULT_POLL_INTERVAL,
+    Error as HttpSubscriptionError, HttpPollingSubscription, HttpSubscriptionConfig,
 };
 pub use provider::RobustProvider;
 pub use provider_conversion::{IntoRobustProvider, IntoRootProvider};

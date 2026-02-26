@@ -504,9 +504,8 @@ impl<N: Network> RobustProvider<N> {
             let primary_supports_pubsub = self.primary().client().pubsub_frontend().is_some();
             if primary_supports_pubsub {
                 return self.subscribe_blocks_ws().await;
-            } else {
-                return self.subscribe_blocks_http().await;
             }
+            return self.subscribe_blocks_http().await;
         }
 
         #[cfg(not(feature = "http-subscription"))]
@@ -536,7 +535,7 @@ impl<N: Network> RobustProvider<N> {
     /// Falls back to WebSocket if HTTP polling fails.
     #[cfg(feature = "http-subscription")]
     async fn subscribe_blocks_http(&self) -> Result<RobustSubscription<N>, Error> {
-        use crate::robust_provider::http_subscription::HttpSubscriptionError;
+        use crate::robust_provider::http_subscription::Error as HttpSubscriptionError;
 
         if !self.allow_http_subscriptions {
             return self.subscribe_blocks_ws().await;
@@ -586,9 +585,8 @@ impl<N: Network> RobustProvider<N> {
         // All providers exhausted - return the actual error instead of generic Timeout
         Err(match last_error {
             Some(HttpSubscriptionError::RpcError(e)) => Error::RpcError(e),
-            Some(HttpSubscriptionError::Timeout) => Error::Timeout,
+            Some(HttpSubscriptionError::Timeout) | None => Error::Timeout,
             Some(e) => Error::RpcError(std::sync::Arc::new(RpcError::LocalUsageError(Box::new(e)))),
-            None => Error::Timeout,
         })
     }
 

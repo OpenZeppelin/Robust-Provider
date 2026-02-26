@@ -25,6 +25,7 @@ use tokio_stream::StreamExt;
 /// Short poll interval for tests
 const TEST_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+#[allow(clippy::unused_async)]
 async fn spawn_http_anvil()
 -> anyhow::Result<(alloy::node_bindings::AnvilInstance, RootProvider<Ethereum>)> {
     let anvil = Anvil::new().try_spawn()?;
@@ -276,7 +277,7 @@ async fn test_http_only_provider_chain() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test: When allow_http_subscriptions is false (default), HTTP providers are skipped
+/// Test: When `allow_http_subscriptions` is false (default), HTTP providers are skipped
 /// and subscription uses WS fallback
 #[tokio::test]
 async fn test_http_subscriptions_disabled_skips_http() -> anyhow::Result<()> {
@@ -306,8 +307,8 @@ async fn test_http_subscriptions_disabled_skips_http() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test: When allow_http_subscriptions is false and no WS providers exist,
-/// subscribe_blocks should fail
+/// Test: When `allow_http_subscriptions` is false and no WS providers exist,
+/// `subscribe_blocks` should fail
 #[tokio::test]
 async fn test_http_disabled_no_ws_fails() -> anyhow::Result<()> {
     let (_anvil, http_provider) = spawn_http_anvil().await?;
@@ -325,7 +326,7 @@ async fn test_http_disabled_no_ws_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test: poll_interval configuration is respected
+/// Test: `poll_interval` configuration is respected
 #[tokio::test]
 async fn test_poll_interval_is_respected() -> anyhow::Result<()> {
     let (_anvil, provider) = spawn_http_anvil().await?;
@@ -364,9 +365,7 @@ async fn test_poll_interval_is_respected() -> anyhow::Result<()> {
     let min_expected = poll_interval / 2;
     assert!(
         elapsed >= min_expected,
-        "Poll interval not respected. Expected >= {:?}, got {:?}",
-        min_expected,
-        elapsed
+        "Poll interval not respected. Expected >= {min_expected:?}, got {elapsed:?}",
     );
 
     Ok(())
@@ -436,8 +435,7 @@ async fn test_all_providers_fail_returns_error() -> anyhow::Result<()> {
             // Expected - got an error
             assert!(
                 matches!(e, SubscriptionError::Timeout | SubscriptionError::RpcError(_)),
-                "Expected Timeout or RpcError, got {:?}",
-                e
+                "Expected Timeout or RpcError, got {e:?}",
             );
         }
         Err(_) => {
@@ -494,13 +492,13 @@ async fn test_http_polling_deduplication() -> anyhow::Result<()> {
 // Configuration Propagation Tests
 // ============================================================================
 
-/// Test: poll_interval from builder is used when subscription fails over to HTTP
+/// Test: `poll_interval` from builder is used when subscription fails over to HTTP
 ///
-/// This verifies fix for bug where http_config used defaults instead of
+/// This verifies fix for bug where `http_config` used defaults instead of
 /// user-configured values when a WebSocket subscription was created first.
 #[tokio::test]
 async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
-    let (_anvil_ws, ws_provider) = spawn_ws_anvil().await?;
+    let (anvil_ws, ws_provider) = spawn_ws_anvil().await?;
     let (_anvil_http, http_provider) = spawn_http_anvil().await?;
 
     // Use a distinctive poll interval that's different from the default (12s)
@@ -522,7 +520,7 @@ async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
     assert_eq!(block.number, 1);
 
     // Kill WS to force failover to HTTP
-    drop(_anvil_ws);
+    drop(anvil_ws);
 
     // Mine on HTTP and wait for failover
     let http_clone = http_provider.clone();
@@ -555,9 +553,7 @@ async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
     // Allow some margin but it should be much less than the default 12s
     assert!(
         elapsed < Duration::from_millis(500),
-        "Poll interval not respected. Elapsed {:?}, expected ~{:?}",
-        elapsed,
-        custom_poll_interval
+        "Poll interval not respected. Elapsed {elapsed:?}, expected ~{custom_poll_interval:?}",
     );
 
     Ok(())
@@ -644,7 +640,7 @@ async fn test_http_reconnect_validates_provider() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Result<()> {
     let (anvil_primary, primary) = spawn_http_anvil().await?;
-    let (_anvil_fb1, fallback1) = spawn_http_anvil().await?;
+    let (anvil_fb1, fallback1) = spawn_http_anvil().await?;
     let (_anvil_fb2, fallback2) = spawn_http_anvil().await?;
 
     let robust = RobustProviderBuilder::fragile(primary.clone())
@@ -667,7 +663,7 @@ async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Re
 
     // Kill primary AND fallback1 - only fallback2 will work
     drop(anvil_primary);
-    drop(_anvil_fb1);
+    drop(anvil_fb1);
 
     // Don't mine on fallback2 immediately - let timeouts trigger failover
     // After SHORT_TIMEOUT, primary poll fails -> try fallback1
@@ -699,7 +695,7 @@ async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Re
 #[tokio::test]
 async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()> {
     let (anvil_primary, primary) = spawn_http_anvil().await?;
-    let (_anvil_fb, fallback) = spawn_http_anvil().await?;
+    let (anvil_fb, fallback) = spawn_http_anvil().await?;
 
     let robust = RobustProviderBuilder::fragile(primary.clone())
         .fallback(fallback.clone())
@@ -718,11 +714,12 @@ async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()>
 
     // Kill both providers
     drop(anvil_primary);
-    drop(_anvil_fb);
+    drop(anvil_fb);
 
     // Don't mine anything - let it timeout and exhaust providers
     let result = tokio::time::timeout(Duration::from_secs(3), subscription.recv()).await;
 
+    #[allow(clippy::match_same_arms)]
     match result {
         Ok(Err(SubscriptionError::Timeout)) => {
             // Expected: all providers exhausted, returns timeout error
@@ -737,7 +734,7 @@ async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()>
             // Outer timeout - also acceptable, means it's still trying
         }
         Ok(Err(e)) => {
-            panic!("Unexpected error type: {:?}", e);
+            panic!("Unexpected error type: {e:?}");
         }
     }
 

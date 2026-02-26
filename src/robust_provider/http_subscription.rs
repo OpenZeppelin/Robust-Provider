@@ -41,7 +41,6 @@ use crate::RobustProvider;
 use alloy::{
     network::{BlockResponse, Network},
     primitives::BlockHash,
-    providers::Provider,
     transports::{RpcError, TransportErrorKind},
 };
 use futures_util::{StreamExt, stream};
@@ -61,7 +60,7 @@ pub const DEFAULT_BUFFER_CAPACITY: usize = 128;
 
 /// Errors specific to HTTP polling subscriptions.
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum HttpSubscriptionError {
+pub enum Error {
     /// Polling operation exceeded the configured timeout.
     #[error("Polling operation timed out")]
     Timeout,
@@ -75,13 +74,23 @@ pub enum HttpSubscriptionError {
     Closed,
 
     /// Failed to fetch block from the provider.
-    #[error("Block fetch failed: {0}")]
-    BlockFetchFailed(String),
+    #[error("Block fetch failed")]
+    BlockNotFound,
 }
 
-impl From<RpcError<TransportErrorKind>> for HttpSubscriptionError {
+impl From<RpcError<TransportErrorKind>> for Error {
     fn from(err: RpcError<TransportErrorKind>) -> Self {
-        HttpSubscriptionError::RpcError(Arc::new(err))
+        Error::RpcError(Arc::new(err))
+    }
+}
+
+impl From<crate::Error> for Error {
+    fn from(err: crate::Error) -> Self {
+        match err {
+            crate::Error::Timeout => Error::Timeout,
+            crate::Error::BlockNotFound => Error::BlockNotFound,
+            crate::Error::RpcError(rpc_err) => Error::RpcError(rpc_err),
+        }
     }
 }
 
@@ -100,7 +109,7 @@ pub struct HttpSubscriptionConfig {
 
     /// Buffer size for the internal channel.
     ///
-    /// Default: [`DEFAULT_BUFFER_CAPACITY`] (128)
+    /// Default: [`DEFAULT_BUFFER_CAPACITY`]
     pub buffer_capacity: usize,
 }
 
@@ -151,21 +160,25 @@ where
     /// * `provider` - The HTTP provider to poll
     /// * `config` - Configuration for polling behavior
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the block filter cannot be created.
+    ///
     /// # Example
     ///
     /// ```rust,no_run
-    /// use robust_provider::{RobustProvider, RobustProviderBuilder};
-    /// use robust_provider::robust_provider::http_subscription::{HttpPollingSubscription, HttpSubscriptionConfig};
     /// use alloy::providers::ProviderBuilder;
+    /// use robust_provider::{
+    ///     RobustProvider, RobustProviderBuilder,
+    ///     robust_provider::http_subscription::{HttpPollingSubscription, HttpSubscriptionConfig},
+    /// };
     /// use std::time::Duration;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let http = ProviderBuilder::new().connect_http("http://localhost:8545".parse()?)?;
     /// let provider = RobustProviderBuilder::new(http).build().await?;
-    /// let config = HttpSubscriptionConfig {
-    ///     poll_interval: Duration::from_secs(6),
-    ///     ..Default::default()
-    /// };
+    /// let config =
+    ///     HttpSubscriptionConfig { poll_interval: Duration::from_secs(6), ..Default::default() };
     /// let mut sub = HttpPollingSubscription::new(provider, config).await?;
     /// # Ok(())
     /// # }
@@ -173,22 +186,19 @@ where
     pub async fn new(
         provider: RobustProvider<N>,
         config: HttpSubscriptionConfig,
-    ) -> Result<Self, HttpSubscriptionError> {
-        let (sender, receiver) = mpsc::channel(config.buffer_capacity);
-
+    ) -> Result<Self, Error> {
         let poller = provider
-            .primary()
             .watch_blocks()
-            .await
-            .map_err(HttpSubscriptionError::from)?
+            .await?
             .with_poll_interval(config.poll_interval)
             .with_channel_size(config.buffer_capacity);
+
+        let (sender, receiver) = mpsc::channel(config.buffer_capacity);
 
         // Spawn a task to forward block hashes to the channel
         let stream = poller.into_stream().flat_map(stream::iter);
         tokio::spawn(async move {
-            let mut stream = stream;
-            let sender = sender;
+            let mut stream = std::pin::pin!(stream);
             while let Some(hash) = stream.next().await {
                 if sender.send(hash).await.is_err() {
                     // Receiver dropped, stop polling
@@ -206,19 +216,17 @@ where
     ///
     /// # Errors
     ///
-    /// * [`HttpSubscriptionError::Closed`] - if the subscription channel is closed.
-    /// * [`HttpSubscriptionError::Timeout`] - if the polling operation times out.
-    /// * [`HttpSubscriptionError::RpcError`] - if an RPC error occurs during polling.
-    /// * [`HttpSubscriptionError::BlockFetchFailed`] - if the block fetch fails.
-    pub async fn recv(&mut self) -> Result<N::HeaderResponse, HttpSubscriptionError> {
-        let block_hash = self.receiver.recv().await.ok_or(HttpSubscriptionError::Closed)?;
+    /// * [`Error::Closed`] - if the subscription channel is closed.
+    /// * [`Error::Timeout`] - if the polling operation times out.
+    /// * [`Error::RpcError`] - if an RPC error occurs during polling.
+    /// * [`Error::BlockNotFound`] - if the block fetch fails.
+    pub async fn recv(&mut self) -> Result<N::HeaderResponse, Error> {
+        let block_hash = self.receiver.recv().await.ok_or(Error::Closed)?;
 
         let block = self.provider.get_block_by_hash(block_hash).await.map_err(|e| match e {
-            crate::Error::Timeout => HttpSubscriptionError::Timeout,
-            crate::Error::BlockNotFound => {
-                HttpSubscriptionError::BlockFetchFailed("Block not found".to_string())
-            }
-            crate::Error::RpcError(rpc_err) => HttpSubscriptionError::RpcError(rpc_err),
+            crate::Error::Timeout => Error::Timeout,
+            crate::Error::BlockNotFound => Error::BlockNotFound,
+            crate::Error::RpcError(rpc_err) => Error::RpcError(rpc_err),
         })?;
         Ok(block.header().clone())
     }
@@ -324,20 +332,20 @@ mod tests {
     #[tokio::test]
     async fn test_http_subscription_error_types() {
         // Test Timeout error
-        let timeout_err = HttpSubscriptionError::Timeout;
-        assert!(matches!(timeout_err, HttpSubscriptionError::Timeout));
+        let timeout_err = Error::Timeout;
+        assert!(matches!(timeout_err, Error::Timeout));
 
         // Test RpcError conversion
         let rpc_err: RpcError<TransportErrorKind> = TransportErrorKind::custom_str("test error");
-        let sub_err: HttpSubscriptionError = rpc_err.into();
-        assert!(matches!(sub_err, HttpSubscriptionError::RpcError(_)));
+        let sub_err: Error = rpc_err.into();
+        assert!(matches!(sub_err, Error::RpcError(_)));
 
         // Test Closed error
-        let closed_err = HttpSubscriptionError::Closed;
-        assert!(matches!(closed_err, HttpSubscriptionError::Closed));
+        let closed_err = Error::Closed;
+        assert!(matches!(closed_err, Error::Closed));
 
         // Test BlockFetchFailed error
-        let fetch_err = HttpSubscriptionError::BlockFetchFailed("test".to_string());
-        assert!(matches!(fetch_err, HttpSubscriptionError::BlockFetchFailed(_)));
+        let fetch_err = Error::BlockNotFound;
+        assert!(matches!(fetch_err, Error::BlockNotFound));
     }
 }

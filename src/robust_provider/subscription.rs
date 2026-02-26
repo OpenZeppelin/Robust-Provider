@@ -20,7 +20,7 @@ use crate::robust_provider::{CoreError, RobustProvider};
 
 #[cfg(feature = "http-subscription")]
 use crate::robust_provider::http_subscription::{
-    HttpPollingSubscription, HttpSubscriptionConfig, HttpSubscriptionError,
+    Error as HttpSubscriptionError, HttpPollingSubscription, HttpSubscriptionConfig,
 };
 
 /// Errors that can occur when using [`RobustSubscription`].
@@ -66,11 +66,7 @@ impl From<HttpSubscriptionError> for Error {
         match err {
             HttpSubscriptionError::Timeout => Error::Timeout,
             HttpSubscriptionError::RpcError(e) => Error::RpcError(e),
-            HttpSubscriptionError::Closed => Error::Closed,
-            HttpSubscriptionError::BlockFetchFailed(msg) => {
-                // Use custom_str which returns RpcError directly
-                Error::RpcError(Arc::new(TransportErrorKind::custom_str(&msg)))
-            }
+            HttpSubscriptionError::Closed | HttpSubscriptionError::BlockNotFound => Error::Closed,
         }
     }
 }
@@ -259,19 +255,18 @@ impl<N: Network> RobustSubscription<N> {
                 tokio::time::timeout(HTTP_RECONNECT_VALIDATION_TIMEOUT, primary.get_block_number())
                     .await;
 
-            if matches!(validation, Ok(Ok(_))) {
-                if let Ok(http_sub) = HttpPollingSubscription::new(
+            if matches!(validation, Ok(Ok(_)))
+                && let Ok(http_sub) = HttpPollingSubscription::new(
                     self.robust_provider.clone(),
                     self.http_config.clone(),
                 )
                 .await
-                {
-                    info!("Reconnected to primary provider (HTTP polling)");
-                    self.backend = SubscriptionBackend::HttpPolling(http_sub);
-                    self.current_fallback_index = None;
-                    self.last_reconnect_attempt = None;
-                    return true;
-                }
+            {
+                info!("Reconnected to primary provider (HTTP polling)");
+                self.backend = SubscriptionBackend::HttpPolling(http_sub);
+                self.current_fallback_index = None;
+                self.last_reconnect_attempt = None;
+                return true;
             }
         }
 
@@ -314,21 +309,20 @@ impl<N: Network> RobustSubscription<N> {
 
             // Try HTTP polling if enabled
             #[cfg(feature = "http-subscription")]
-            if self.robust_provider.allow_http_subscriptions {
-                if let Ok(http_sub) = HttpPollingSubscription::new(
+            if self.robust_provider.allow_http_subscriptions
+                && let Ok(http_sub) = HttpPollingSubscription::new(
                     self.robust_provider.clone(),
                     self.http_config.clone(),
                 )
                 .await
-                {
-                    info!(
-                        fallback_index = idx,
-                        "Subscription switched to fallback provider (HTTP polling)"
-                    );
-                    self.backend = SubscriptionBackend::HttpPolling(http_sub);
-                    self.current_fallback_index = Some(idx);
-                    return Ok(());
-                }
+            {
+                info!(
+                    fallback_index = idx,
+                    "Subscription switched to fallback provider (HTTP polling)"
+                );
+                self.backend = SubscriptionBackend::HttpPolling(http_sub);
+                self.current_fallback_index = Some(idx);
+                return Ok(());
             }
         }
 
@@ -352,8 +346,8 @@ impl<N: Network> RobustSubscription<N> {
 
     /// Check if the subscription channel is empty (no pending messages)
     #[must_use]
-    pub fn is_empty(&mut self) -> bool {
-        match &mut self.backend {
+    pub fn is_empty(&self) -> bool {
+        match &self.backend {
             SubscriptionBackend::WebSocket(sub) => sub.is_empty(),
             #[cfg(feature = "http-subscription")]
             SubscriptionBackend::HttpPolling(sub) => sub.is_empty(),
