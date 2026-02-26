@@ -68,11 +68,8 @@ pub use robust_provider::{
     CoreError, DEFAULT_CALL_TIMEOUT, DEFAULT_MAX_RETRIES, DEFAULT_MIN_DELAY,
     DEFAULT_RECONNECT_INTERVAL, DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, DEFAULT_SUBSCRIPTION_TIMEOUT,
     Error, IntoRobustProvider, IntoRootProvider, RobustProvider, RobustProviderBuilder,
-    RobustSubscription, RobustSubscriptionStream, SubscriptionError,
+    RobustSubscription, RobustSubscriptionStream,
 };
 
 #[cfg(feature = "http-subscription")]
-pub use robust_provider::{
-    DEFAULT_BUFFER_CAPACITY, DEFAULT_POLL_INTERVAL, HttpPollingSubscription,
-    HttpSubscriptionConfig, HttpSubscriptionError,
-};
+pub use robust_provider::DEFAULT_POLL_INTERVAL;

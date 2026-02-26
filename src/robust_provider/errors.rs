@@ -17,9 +17,7 @@ use std::sync::Arc;
 
 use alloy::transports::{RpcError, TransportErrorKind};
 use thiserror::Error;
-use tokio::time::error as TokioError;
-
-use super::subscription;
+use tokio::{sync::broadcast::error::RecvError, time::error as TokioError};
 
 /// Errors that can occur when using [`super::RobustProvider`].
 #[derive(Error, Debug, Clone)]
@@ -43,6 +41,13 @@ pub enum Error {
     /// [`Error::RpcError`].
     #[error("Block not found")]
     BlockNotFound,
+
+    /// The subscription channel was closed.
+    #[error("Subscription channel closed")]
+    Closed,
+
+    #[error("Subscription lagged behind by: {0}")]
+    Lagged(u64),
 }
 
 /// Low-level error related to RPC calls and failover logic.
@@ -98,13 +103,11 @@ impl From<TokioError::Elapsed> for Error {
     }
 }
 
-impl From<subscription::Error> for Error {
-    fn from(err: subscription::Error) -> Self {
+impl From<RecvError> for Error {
+    fn from(err: RecvError) -> Self {
         match err {
-            subscription::Error::RpcError(e) => Error::RpcError(e),
-            subscription::Error::Timeout
-            | subscription::Error::Closed
-            | subscription::Error::Lagged(_) => Error::Timeout,
+            RecvError::Closed => Error::Closed,
+            RecvError::Lagged(count) => Error::Lagged(count),
         }
     }
 }
@@ -120,9 +123,9 @@ pub(crate) fn is_retryable_error(code: i64, message: &str) -> bool {
 }
 
 pub(crate) fn is_block_not_found(code: i64, message: &str) -> bool {
-    geth::is_block_not_found(code, message)
-        || besu::is_block_not_found(code, message)
-        || anvil::is_block_not_found(code, message)
+    geth::is_block_not_found(code, message) ||
+        besu::is_block_not_found(code, message) ||
+        anvil::is_block_not_found(code, message)
 }
 
 pub(crate) fn is_invalid_log_filter(code: i64, message: &str) -> bool {
@@ -173,14 +176,14 @@ mod geth {
             (
                 DEFAULT_ERROR_CODE,
                 // https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L39-L46
-                "invalid block range params"
-                    | "block range extends beyond current head block"
-                    | "can't specify fromBlock/toBlock with blockHash"
-                    | "pending logs are not supported"
-                    | "unknown block"
-                    | "exceed max topics"
-                    | "exceed max addresses or topics per search position"
-                    | "filter not found"
+                "invalid block range params" |
+                    "block range extends beyond current head block" |
+                    "can't specify fromBlock/toBlock with blockHash" |
+                    "pending logs are not supported" |
+                    "unknown block" |
+                    "exceed max topics" |
+                    "exceed max addresses or topics per search position" |
+                    "filter not found"
             )
         )
     }

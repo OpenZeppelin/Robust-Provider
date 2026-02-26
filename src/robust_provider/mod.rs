@@ -16,27 +16,17 @@
 //!
 //! # Feature Flags
 //!
-//! * `http-subscription` - Enable HTTP-based polling subscriptions for providers without
-//!   native pubsub support
+//! * `http-subscription` - Enable HTTP-based polling subscriptions for providers without native
+//!   pubsub support
 
 mod builder;
 mod errors;
-#[cfg(feature = "http-subscription")]
-mod http_subscription;
 mod provider;
 mod provider_conversion;
 mod subscription;
 
 pub use builder::*;
 pub use errors::{CoreError, Error};
-#[cfg(feature = "http-subscription")]
-pub use http_subscription::{
-    DEFAULT_BUFFER_CAPACITY, DEFAULT_CALL_TIMEOUT, DEFAULT_POLL_INTERVAL,
-    Error as HttpSubscriptionError, HttpPollingSubscription, HttpSubscriptionConfig,
-};
 pub use provider::RobustProvider;
 pub use provider_conversion::{IntoRobustProvider, IntoRootProvider};
-pub use subscription::{
-    DEFAULT_RECONNECT_INTERVAL, Error as SubscriptionError, RobustSubscription,
-    RobustSubscriptionStream,
-};
+pub use subscription::{DEFAULT_RECONNECT_INTERVAL, RobustSubscription, RobustSubscriptionStream};

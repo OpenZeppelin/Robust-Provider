@@ -6,9 +6,6 @@ use crate::robust_provider::{
     Error, IntoRootProvider, RobustProvider, subscription::DEFAULT_RECONNECT_INTERVAL,
 };
 
-#[cfg(feature = "http-subscription")]
-use crate::robust_provider::http_subscription::DEFAULT_POLL_INTERVAL;
-
 type BoxedProviderFuture<N> = Pin<Box<dyn Future<Output = Result<RootProvider<N>, Error>> + Send>>;
 
 // RPC retry and timeout settings
@@ -22,6 +19,12 @@ pub const DEFAULT_MAX_RETRIES: usize = 3;
 pub const DEFAULT_MIN_DELAY: Duration = Duration::from_secs(1);
 /// Default subscription channel size.
 pub const DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY: usize = 128;
+/// Default polling interval for HTTP subscriptions.
+///
+/// Set to 12 seconds to match approximate Ethereum mainnet block time.
+/// Adjust based on the target chain's block time.
+#[cfg(feature = "http-subscription")]
+pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(12);
 
 /// Builder for constructing a [`RobustProvider`].
 ///

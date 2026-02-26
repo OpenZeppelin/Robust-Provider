@@ -15,7 +15,7 @@ use alloy::{
     providers::{Provider, ProviderBuilder, RootProvider, ext::AnvilApi},
 };
 use common::{BUFFER_TIME, SHORT_TIMEOUT};
-use robust_provider::{RobustProviderBuilder, SubscriptionError};
+use robust_provider::{Error, RobustProviderBuilder};
 use tokio_stream::StreamExt;
 
 // ============================================================================
@@ -434,7 +434,7 @@ async fn test_all_providers_fail_returns_error() -> anyhow::Result<()> {
         Ok(Err(e)) => {
             // Expected - got an error
             assert!(
-                matches!(e, SubscriptionError::Timeout | SubscriptionError::RpcError(_)),
+                matches!(e, Error::Timeout | Error::RpcError(_)),
                 "Expected Timeout or RpcError, got {e:?}",
             );
         }
@@ -721,10 +721,10 @@ async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()>
 
     #[allow(clippy::match_same_arms)]
     match result {
-        Ok(Err(SubscriptionError::Timeout)) => {
+        Ok(Err(Error::Timeout)) => {
             // Expected: all providers exhausted, returns timeout error
         }
-        Ok(Err(SubscriptionError::RpcError(_))) => {
+        Ok(Err(Error::RpcError(_))) => {
             // Also acceptable: RPC error from dead providers
         }
         Ok(Ok(block)) => {

@@ -14,8 +14,7 @@ use alloy::{
 };
 use common::{BUFFER_TIME, RECONNECT_INTERVAL, SHORT_TIMEOUT, spawn_ws_anvil};
 use robust_provider::{
-    DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, RobustProviderBuilder, RobustSubscriptionStream,
-    SubscriptionError,
+    DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY, Error, RobustProviderBuilder, RobustSubscriptionStream,
 };
 use tokio::time::sleep;
 use tokio_stream::StreamExt;
@@ -209,11 +208,11 @@ async fn test_stream_continues_streaming_errors() -> anyhow::Result<()> {
     assert_next_block!(stream, 1);
 
     // Trigger timeout error - the stream will continue to stream errors
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     // Without fallbacks, subsequent calls will continue to return errors
     // (not None, since only Error::Closed terminates the stream)
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     Ok(())
 }
@@ -276,7 +275,7 @@ async fn subscription_fails_with_no_fallbacks() -> anyhow::Result<()> {
     assert_next_block!(stream, 1);
 
     // No fallback available - should error after timeout
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     Ok(())
 }
@@ -307,7 +306,7 @@ async fn ws_fails_http_fallback_returns_primary_error() -> anyhow::Result<()> {
     assert_next_block!(stream, 2);
 
     // Verify: HTTP fallback can't provide subscription, so we get an error
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     Ok(())
 }
@@ -342,7 +341,7 @@ async fn test_single_fallback_provider() -> anyhow::Result<()> {
     trigger_failover(&mut stream, fallback.clone(), 1).await?;
 
     // FB -> try PP (fails) -> no more fallbacks -> error
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     Ok(())
 }
@@ -381,7 +380,7 @@ async fn subscription_cycles_through_multiple_fallbacks() -> anyhow::Result<()> 
     assert_next_block!(stream, 2);
 
     // FP2 times out -> tries PP (fails) -> no more fallbacks -> error
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     Ok(())
 }
@@ -423,7 +422,7 @@ async fn test_many_fallback_providers() -> anyhow::Result<()> {
     trigger_failover_with_delay(&mut stream, fb_4.clone(), 1, SHORT_TIMEOUT).await?;
     trigger_failover_with_delay(&mut stream, fb_5.clone(), 1, SHORT_TIMEOUT).await?;
 
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     Ok(())
 }
@@ -688,7 +687,7 @@ async fn test_backend_gone_error_propagation() -> anyhow::Result<()> {
     drop(anvil);
 
     // Should get BackendGone or Timeout error
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     Ok(())
 }
@@ -713,7 +712,7 @@ async fn test_immediate_consecutive_failures() -> anyhow::Result<()> {
     drop(anvil);
 
     // First failure
-    assert!(matches!(stream.next().await.unwrap(), Err(SubscriptionError::Timeout)));
+    assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
 
     Ok(())
 }
@@ -738,7 +737,7 @@ async fn test_subscription_lagged_error() -> anyhow::Result<()> {
 
     // First recv should return Lagged error (skipped some blocks)
     let result = subscription.recv().await;
-    assert!(matches!(result, Err(SubscriptionError::Lagged(_))));
+    assert!(matches!(result, Err(Error::Lagged(_))));
 
     Ok(())
 }

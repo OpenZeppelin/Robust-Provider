@@ -8,6 +8,7 @@ use alloy::{
     eips::BlockNumberOrTag,
     node_bindings::Anvil,
     providers::{Provider, ProviderBuilder, ext::AnvilApi},
+    transports::{RpcError, TransportErrorKind},
 };
 use robust_provider::{Error, RobustProviderBuilder};
 
@@ -148,18 +149,29 @@ async fn test_operation_completes_when_provider_unavailable() -> anyhow::Result<
 
     let provider = ProviderBuilder::new().connect_http(endpoint);
 
-    let robust = RobustProviderBuilder::fragile(provider)
-        .call_timeout(Duration::from_secs(2))
-        .build()
-        .await?;
+    let timeout = Duration::from_secs(5);
+
+    let robust = RobustProviderBuilder::fragile(provider).call_timeout(timeout).build().await?;
 
     let start = Instant::now();
     let result = robust.get_block_number().await;
     let elapsed = start.elapsed();
 
     // Should fail (connection refused) and not hang
-    assert!(result.is_err());
-    assert!(elapsed < Duration::from_secs(5));
+    let err = result.expect_err("expected RPC error due to unavailable provider");
+    match err {
+        Error::RpcError(e) => {
+            let e = e.as_ref();
+            match e {
+                RpcError::Transport(TransportErrorKind::Custom(_)) => {}
+                other => panic!(
+                    "expected RpcError::Transport(TransportErrorKind::Custom), got {other:?}"
+                ),
+            }
+        }
+        other => panic!("expected Error::RpcError, got {other:?}"),
+    }
+    assert!(elapsed < timeout);
 
     Ok(())
 }
