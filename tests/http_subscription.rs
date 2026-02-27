@@ -15,7 +15,7 @@ use alloy::{
     providers::{Provider, ProviderBuilder, RootProvider, ext::AnvilApi},
 };
 use common::{BUFFER_TIME, SHORT_TIMEOUT};
-use robust_provider::{RobustProviderBuilder, SubscriptionError};
+use robust_provider::{Error, RobustProviderBuilder};
 use tokio_stream::StreamExt;
 
 // ============================================================================
@@ -77,6 +77,153 @@ async fn test_http_subscription_basic_flow() -> anyhow::Result<()> {
         .expect("timeout waiting for block 2")
         .expect("recv error");
     assert_eq!(block.number, 2, "Should receive block 2");
+
+    Ok(())
+}
+
+// ============================================================================
+// Regression Tests
+// ============================================================================
+
+/// Test: Enabling `allow_http_subscriptions(true)` does not break WS-only chains.
+///
+/// This is a regression guard ensuring pubsub-capable providers still use WS subscriptions
+/// even when HTTP subscriptions are enabled.
+#[tokio::test]
+async fn test_ws_only_chain_works_with_http_subscriptions_enabled() -> anyhow::Result<()> {
+    let (anvil_primary, primary) = spawn_ws_anvil().await?;
+    let (_anvil_fallback, fallback) = spawn_ws_anvil().await?;
+
+    let robust = RobustProviderBuilder::fragile(primary.clone())
+        .fallback(fallback.clone())
+        .allow_http_subscriptions(true)
+        .poll_interval(TEST_POLL_INTERVAL)
+        .subscription_timeout(SHORT_TIMEOUT)
+        .build()
+        .await?;
+
+    let mut subscription = robust.subscribe_blocks().await?;
+
+    // Receive initial block from WS primary.
+    primary.anvil_mine(Some(1), None).await?;
+    // mine different number of blocks on fallback node
+    fallback.anvil_mine(Some(5), None).await?;
+
+    // should get block from primary
+    let block = subscription.recv().await?;
+    assert_eq!(block.number, 1);
+    assert!(subscription.is_empty());
+
+    // Kill WS primary and ensure we can still fail over to WS fallback.
+    drop(anvil_primary);
+
+    tokio::spawn(async move {
+        // sleep just enough before mining to ensure subscription switches to this fallback provider
+        tokio::time::sleep(SHORT_TIMEOUT + BUFFER_TIME).await;
+        fallback.anvil_mine(Some(1), None).await.unwrap();
+    });
+
+    let block = tokio::time::timeout(Duration::from_secs(5), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    assert_eq!(block.number, 6);
+    assert!(subscription.is_empty());
+
+    Ok(())
+}
+
+/// Test: With mixed fallbacks, HTTP is used when allowed, and WS is used if HTTP dies.
+///
+/// Chain:
+/// - Primary: WS (pubsub)
+/// - Fallback #1: HTTP (polling)
+/// - Fallback #2: WS (pubsub)
+#[tokio::test]
+async fn test_mixed_fallback_ordering_ws_to_http_to_ws() -> anyhow::Result<()> {
+    let (anvil_ws_primary, ws_primary) = spawn_ws_anvil().await?;
+    let (anvil_http, http_fallback) = spawn_http_anvil().await?;
+    let (_anvil_ws2, ws_fallback) = spawn_ws_anvil().await?;
+
+    let robust = RobustProviderBuilder::fragile(ws_primary.clone())
+        .fallback(http_fallback.clone())
+        .fallback(ws_fallback.clone())
+        .allow_http_subscriptions(true)
+        .poll_interval(TEST_POLL_INTERVAL)
+        .max_retries(0)
+        .min_delay(Duration::from_millis(0))
+        // Same reasoning as `test_failover_ws_to_http_on_provider_death`.
+        .call_timeout(Duration::from_millis(200))
+        .subscription_timeout(Duration::from_secs(2))
+        .build()
+        .await?;
+
+    let mut subscription = robust.subscribe_blocks().await?;
+
+    // Confirm we start on WS primary.
+    ws_primary.anvil_mine(Some(1), None).await?;
+    let block = subscription.recv().await?;
+    assert_eq!(block.number, 1);
+
+    // Kill WS primary to force failover to HTTP fallback.
+    drop(anvil_ws_primary);
+    let http_clone = http_fallback.clone();
+    let http_mining_task = tokio::spawn(async move {
+        tokio::time::sleep(BUFFER_TIME).await;
+
+        // Mine long enough to cover the failover window.
+        for _ in 0..120 {
+            if http_clone.anvil_mine(Some(1), None).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    });
+
+    // Must receive a block after WS primary died; this should come from HTTP fallback.
+    let block = tokio::time::timeout(Duration::from_secs(5), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    assert!(block.number >= 1);
+
+    // Stop mining on HTTP so we don't enqueue extra hashes while switching away.
+    http_mining_task.abort();
+
+    // Drain any already-enqueued HTTP hashes to avoid `BlockNotFound` after the HTTP provider is
+    // dropped and robust-provider routes `get_block_by_hash` to a different backend.
+    for _ in 0..50 {
+        if subscription.is_empty() {
+            break;
+        }
+
+        // Use an outer timeout so we don't block here if `is_empty()` is stale.
+        let _ = tokio::time::timeout(Duration::from_millis(200), subscription.recv()).await;
+    }
+
+    // Now kill HTTP fallback too, and ensure we can fail over to WS fallback.
+    drop(anvil_http);
+    let ws2_clone = ws_fallback.clone();
+    tokio::spawn(async move {
+        // Wait long enough for:
+        // - the HTTP polling recv() to time out
+        // - fallback switching logic to establish a WS subscription
+        tokio::time::sleep(Duration::from_millis(2500)).await;
+
+        // Mine repeatedly to avoid racing with WS subscription establishment.
+        for _ in 0..20 {
+            if ws2_clone.anvil_mine(Some(1), None).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    });
+
+    let block = tokio::time::timeout(Duration::from_secs(5), subscription.recv())
+        .await
+        .expect("timeout")
+        .expect("recv error");
+    assert!(block.number >= 1);
 
     Ok(())
 }
@@ -152,7 +299,7 @@ async fn test_http_subscription_as_stream() -> anyhow::Result<()> {
 ///
 /// Verification: We confirm failover by checking that after WS death,
 /// we still receive blocks (which must come from HTTP since WS is dead)
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn test_failover_ws_to_http_on_provider_death() -> anyhow::Result<()> {
     let (anvil_ws, ws_provider) = spawn_ws_anvil().await?;
     let (_anvil_http, http_provider) = spawn_http_anvil().await?;
@@ -161,6 +308,8 @@ async fn test_failover_ws_to_http_on_provider_death() -> anyhow::Result<()> {
         .fallback(http_provider.clone())
         .allow_http_subscriptions(true)
         .poll_interval(TEST_POLL_INTERVAL)
+        // Ensure robust-provider block fetching can fail over within the recv timeout.
+        .call_timeout(SHORT_TIMEOUT / 2)
         .subscription_timeout(SHORT_TIMEOUT)
         .build()
         .await?;
@@ -169,17 +318,32 @@ async fn test_failover_ws_to_http_on_provider_death() -> anyhow::Result<()> {
 
     // Receive initial block from WS
     ws_provider.anvil_mine(Some(1), None).await?;
+
+    // mine different number of blocks on fallback
+    http_provider.anvil_mine(Some(5), None).await?;
+
+    // only primary blocks are received
     let block = subscription.recv().await?;
     assert_eq!(block.number, 1, "Should receive from WS primary");
+    assert!(subscription.is_empty());
 
     // Kill WS provider - this will cause subscription to fail
     drop(anvil_ws);
 
-    // Spawn task to mine on HTTP after timeout triggers failover
+    // Spawn task to mine repeatedly on HTTP after timeout triggers failover.
+    // Mining just once can be flaky if it happens before the HTTP poller is fully established.
     let http_clone = http_provider.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(SHORT_TIMEOUT + BUFFER_TIME).await;
-        http_clone.anvil_mine(Some(1), None).await.unwrap();
+    let http_mining_task = tokio::spawn(async move {
+        // Start mining soon and keep mining long enough to cover the failover window.
+        // Failover only happens after `subscription_timeout` elapses on the WS backend.
+        tokio::time::sleep(BUFFER_TIME).await;
+
+        for _ in 0..120 {
+            if http_clone.anvil_mine(Some(1), None).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
     });
 
     // Should eventually receive a block - since WS is dead, this MUST be from HTTP
@@ -189,8 +353,10 @@ async fn test_failover_ws_to_http_on_provider_death() -> anyhow::Result<()> {
         .expect("recv error");
 
     // We received a block after WS died, proving failover worked
-    // (HTTP starts at genesis, so we get block 0 or 1 depending on timing)
-    assert!(block.number <= 1, "Should receive low block number from HTTP fallback");
+    // The block number may be > 5 because the test mines multiple blocks to avoid races.
+    assert!(block.number >= 5, "Should receive a block from HTTP fallback");
+
+    http_mining_task.abort();
 
     Ok(())
 }
@@ -434,7 +600,7 @@ async fn test_all_providers_fail_returns_error() -> anyhow::Result<()> {
         Ok(Err(e)) => {
             // Expected - got an error
             assert!(
-                matches!(e, SubscriptionError::Timeout | SubscriptionError::RpcError(_)),
+                matches!(e, Error::Timeout | Error::RpcError(_)),
                 "Expected Timeout or RpcError, got {e:?}",
             );
         }
@@ -502,13 +668,16 @@ async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
     let (_anvil_http, http_provider) = spawn_http_anvil().await?;
 
     // Use a distinctive poll interval that's different from the default (12s)
-    let custom_poll_interval = Duration::from_millis(30);
+    let custom_poll_interval = Duration::from_millis(500);
 
     let robust = RobustProviderBuilder::fragile(ws_provider.clone())
         .fallback(http_provider.clone())
         .allow_http_subscriptions(true)
         .poll_interval(custom_poll_interval)
-        .subscription_timeout(SHORT_TIMEOUT)
+        // Ensure robust-provider block fetching can fail over within the recv timeout.
+        // Keep this very small so per-block fetching doesn't dominate the poll-interval timing.
+        .call_timeout(Duration::from_millis(50))
+        .subscription_timeout(Duration::from_secs(2))
         .build()
         .await?;
 
@@ -516,17 +685,28 @@ async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
     let mut subscription = robust.subscribe_blocks().await?;
 
     ws_provider.anvil_mine(Some(1), None).await?;
+
+    http_provider.anvil_mine(Some(5), None).await?;
+
     let block = subscription.recv().await?;
     assert_eq!(block.number, 1);
+    assert!(subscription.is_empty());
 
     // Kill WS to force failover to HTTP
     drop(anvil_ws);
 
     // Mine on HTTP and wait for failover
     let http_clone = http_provider.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(SHORT_TIMEOUT + BUFFER_TIME).await;
-        http_clone.anvil_mine(Some(1), None).await.unwrap();
+    let http_mining_task = tokio::spawn(async move {
+        tokio::time::sleep(BUFFER_TIME).await;
+
+        // Mine long enough to cover the failover window.
+        for _ in 0..120 {
+            if http_clone.anvil_mine(Some(1), None).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
     });
 
     // Should receive block from HTTP fallback
@@ -536,7 +716,9 @@ async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
         .expect("recv error");
 
     // Verify we got a block (proving failover worked with correct config)
-    assert!(block.number <= 1);
+    assert!(block.number >= 5);
+
+    http_mining_task.abort();
 
     // Now verify the poll interval is being used by timing block reception
     // Mine another block and measure how long until we receive it
@@ -552,7 +734,7 @@ async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
     // Should take roughly poll_interval to detect the new block
     // Allow some margin but it should be much less than the default 12s
     assert!(
-        elapsed < Duration::from_millis(500),
+        elapsed < custom_poll_interval + BUFFER_TIME, // multiply to add margin
         "Poll interval not respected. Elapsed {elapsed:?}, expected ~{custom_poll_interval:?}",
     );
 
@@ -721,10 +903,10 @@ async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()>
 
     #[allow(clippy::match_same_arms)]
     match result {
-        Ok(Err(SubscriptionError::Timeout)) => {
+        Ok(Err(Error::Timeout)) => {
             // Expected: all providers exhausted, returns timeout error
         }
-        Ok(Err(SubscriptionError::RpcError(_))) => {
+        Ok(Err(Error::RpcError(_))) => {
             // Also acceptable: RPC error from dead providers
         }
         Ok(Ok(block)) => {
