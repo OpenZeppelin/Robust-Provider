@@ -305,8 +305,63 @@ async fn ws_fails_http_fallback_returns_primary_error() -> anyhow::Result<()> {
     ws_provider.anvil_mine(Some(1), None).await?;
     assert_next_block!(stream, 2);
 
+    // Mine on HTTP fallback to ensure that even if it has blocks, it still cannot serve
+    // a subscription when the `http-subscription` feature is disabled.
+    let http_clone = http_provider.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_secs(1) + BUFFER_TIME).await;
+        http_clone.anvil_mine(Some(5), None).await.unwrap();
+    });
+
     // Verify: HTTP fallback can't provide subscription, so we get an error
     assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_mixed_chain_skips_http_until_ws_is_found() -> anyhow::Result<()> {
+    // Chain:
+    // - Primary: HTTP (no pubsub)
+    // - Fallback #1: HTTP (no pubsub)
+    // - Fallback #2: WS (pubsub)
+    // With `http-subscription` feature disabled, subscribe_blocks should eventually succeed
+    // by selecting the WS fallback.
+
+    let anvil_http_primary = Anvil::new().try_spawn()?;
+    let http_primary = ProviderBuilder::new().connect_http(anvil_http_primary.endpoint_url());
+
+    let anvil_http_fb = Anvil::new().try_spawn()?;
+    let http_fallback = ProviderBuilder::new().connect_http(anvil_http_fb.endpoint_url());
+
+    let (_anvil_ws, ws_fallback) = spawn_ws_anvil().await?;
+
+    let robust = RobustProviderBuilder::fragile(http_primary)
+        .fallback(http_fallback.clone())
+        .fallback(ws_fallback.clone())
+        .call_timeout(Duration::from_secs(2))
+        .subscription_timeout(SHORT_TIMEOUT)
+        .build()
+        .await?;
+
+    // This should succeed by skipping non-pubsub HTTP providers and using the WS fallback.
+    let mut subscription = robust.subscribe_blocks().await?;
+
+    // Mine blocks on both HTTP providers; if an HTTP provider were incorrectly used for
+    // subscription, we'd observe those blocks.
+    http_fallback.anvil_mine(Some(10), None).await?;
+    let http_primary_for_mining =
+        ProviderBuilder::new().connect_http(anvil_http_primary.endpoint_url());
+    http_primary_for_mining.anvil_mine(Some(20), None).await?;
+
+    // Mine exactly one block on WS fallback and ensure we receive WS block #1.
+    ws_fallback.anvil_mine(Some(1), None).await?;
+    let header = tokio::time::timeout(Duration::from_secs(5), subscription.recv())
+        .await
+        .expect("timed out")
+        .expect("recv error");
+    assert_eq!(header.number, 1);
+    assert!(subscription.is_empty());
 
     Ok(())
 }
