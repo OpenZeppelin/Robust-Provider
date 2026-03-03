@@ -147,7 +147,7 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
     /// when used as subscription sources. Only relevant when
     /// [`allow_http_subscriptions`](Self::allow_http_subscriptions) is enabled.
     ///
-    /// Default is 12 seconds (approximate Ethereum mainnet block time).
+    /// Default is [`DEFAULT_POLL_INTERVAL`].
     /// Adjust based on your target chain's block time.
     ///
     /// # Feature Flag
