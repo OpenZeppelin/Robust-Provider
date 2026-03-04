@@ -204,6 +204,12 @@ impl<N: Network> RobustSubscription<N> {
         let allow_http_subscriptions = self.robust_provider.allow_http_subscriptions;
 
         let operation = move |provider: RootProvider<N>| async move {
+            // if HTTP subscriptions are enabled and the provider currently being tried is HTTP,
+            // we will attempt to connect using it.
+            // Otherwise try subscribing through a PubSub operation, and if the provider is HTTP
+            // just let it fail; the error will be non-retriable, so the algorithm will
+            // automatically switch to the next fallback provider (see
+            // `try_provider_with_timeout`).
             #[cfg(feature = "http-subscription")]
             {
                 let not_pubsub = provider.client().pubsub_frontend().is_none();

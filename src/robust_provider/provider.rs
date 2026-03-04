@@ -501,6 +501,12 @@ impl<N: Network> RobustProvider<N> {
     pub async fn subscribe_blocks(&self) -> Result<RobustSubscription<N>, Error> {
         let subscription: SubscriptionBackend<N> = self
             .try_operation_with_failover(move |provider| async move {
+                // if HTTP subscriptions are enabled and the provider currently being tried is HTTP,
+                // we will attempt to connect using it.
+                // Otherwise try subscribing through a PubSub operation, and if the provider is HTTP
+                // just let it fail; the error will be non-retriable, so the algorithm will
+                // automatically switch to the next fallback provider (see
+                // `try_provider_with_timeout`).
                 #[cfg(feature = "http-subscription")]
                 {
                     let not_pubsub = provider.client().pubsub_frontend().is_none();
@@ -513,9 +519,6 @@ impl<N: Network> RobustProvider<N> {
                         });
                     }
                 }
-                // Non-pubsub providers will properly trigger fallback logic without retries because
-                // they return an appropriate RPC error, see the match logic in
-                // `try_provider_with_timeout`.
                 provider
                     .subscribe_blocks()
                     .channel_size(self.subscription_buffer_capacity)
