@@ -351,6 +351,8 @@ async fn test_send_raw_transaction_succeeds() -> anyhow::Result<()> {
 async fn test_send_raw_transaction_sync_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
+    alloy_provider.anvil_set_auto_mine(true).await?;
+
     let accounts = alloy_provider.get_accounts().await?;
     let from = accounts[0];
 
@@ -418,6 +420,8 @@ async fn test_send_transaction_sync_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_send_tx_envelope_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
+
+    alloy_provider.anvil_set_auto_mine(true).await?;
 
     let accounts = alloy_provider.get_accounts().await?;
     let from = accounts[0];

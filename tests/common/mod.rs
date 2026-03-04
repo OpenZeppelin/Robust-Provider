@@ -53,6 +53,8 @@ pub async fn setup_anvil() -> anyhow::Result<(AnvilInstance, RobustProvider, imp
     let anvil = Anvil::new().try_spawn()?;
     let alloy_provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
 
+    alloy_provider.anvil_set_auto_mine(false).await?;
+
     let robust = RobustProviderBuilder::new(alloy_provider.clone())
         .call_timeout(Duration::from_secs(5))
         .build()
