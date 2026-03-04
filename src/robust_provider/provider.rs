@@ -542,8 +542,6 @@ impl<N: Network> RobustProvider<N> {
     /// If the timeout is exceeded and fallback providers are available, it will
     /// attempt to use each fallback provider in sequence.
     ///
-    /// If `require_pubsub` is true, providers that don't support pubsub will be skipped.
-    ///
     /// # Errors
     ///
     /// * [`CoreError::RpcError`] - if no fallback providers succeeded; contains the last error
