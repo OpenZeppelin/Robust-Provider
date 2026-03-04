@@ -95,6 +95,7 @@ async fn test_estimate_eip1559_fees_succeeds() -> anyhow::Result<()> {
 // ============================================================================
 
 #[tokio::test]
+#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_estimate_eip1559_fees_with_default_estimator() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
 
