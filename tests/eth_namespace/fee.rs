@@ -176,6 +176,7 @@ async fn test_estimate_eip1559_fees_with_high_priority_fee() -> anyhow::Result<(
 }
 
 #[tokio::test]
+#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_estimate_eip1559_fees_with_reward_percentile_based() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
 
