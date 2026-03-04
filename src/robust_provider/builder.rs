@@ -153,6 +153,16 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
     /// # Feature Flag
     ///
     /// This method requires the `http-subscription` feature.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let robust = RobustProviderBuilder::new(http_provider)
+    ///     .allow_http_subscriptions(true)
+    ///     .poll_interval(Duration::from_secs(6)) // For faster chains
+    ///     .build()
+    ///     .await?;
+    /// ```
     #[cfg(feature = "http-subscription")]
     #[must_use]
     pub fn poll_interval(mut self, interval: Duration) -> Self {
@@ -169,7 +179,9 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
     ///
     /// * **Latency**: New blocks detected with up to `poll_interval` delay
     /// * **RPC Load**: Generates one RPC call per `poll_interval`
-    /// * **Missed Blocks**: If `poll_interval` > block time, intermediate blocks may be missed
+    /// * **Intermediate Blocks**: Depending on the node/provider semantics, you may not observe
+    ///   every intermediate block when `poll_interval` is larger than the chain's block time (e.g.
+    ///   if only the latest head is exposed).
     ///
     /// # Feature Flag
     ///
@@ -180,7 +192,6 @@ impl<N: Network, P: IntoRootProvider<N>> RobustProviderBuilder<N, P> {
     /// ```rust,ignore
     /// let robust = RobustProviderBuilder::new(http_provider)
     ///     .allow_http_subscriptions(true)
-    ///     .poll_interval(Duration::from_secs(6)) // For faster chains
     ///     .build()
     ///     .await?;
     /// ```
