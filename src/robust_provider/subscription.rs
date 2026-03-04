@@ -50,18 +50,18 @@ impl<N: Network> From<Subscription<N::HeaderResponse>> for SubscriptionBackend<N
 #[cfg(feature = "http-subscription")]
 impl<N: Network> From<PollerBuilder<(U256,), Vec<BlockHash>>> for SubscriptionBackend<N> {
     fn from(value: PollerBuilder<(U256,), Vec<BlockHash>>) -> Self {
-        use futures_util::{StreamExt, stream};
+        use tokio_stream::StreamExt;
 
         let (sender, receiver) = mpsc::channel(value.channel_size());
 
-        // Spawn a task to forward block hashes to the channel
-        let stream = value.into_stream().flat_map(stream::iter);
+        let mut stream = value.into_stream();
         tokio::spawn(async move {
-            let mut stream = std::pin::pin!(stream);
-            while let Some(hash) = stream.next().await {
-                if sender.send(hash).await.is_err() {
-                    // Receiver dropped, stop polling
-                    break;
+            while let Some(hashes) = stream.next().await {
+                for hash in hashes {
+                    if sender.send(hash).await.is_err() {
+                        // Receiver dropped, stop polling
+                        break;
+                    }
                 }
             }
         });

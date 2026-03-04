@@ -27,7 +27,6 @@ backon = "1.6.0"
 tokio-stream = "0.1.17"
 thiserror = "2.0.17"
 tokio-util = "0.7.17"
-futures-util = "0.3"
 
 tracing = { version = "0.1", optional = true }
 serde_json = "1.0.149"
