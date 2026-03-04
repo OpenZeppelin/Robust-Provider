@@ -50,18 +50,18 @@ impl<N: Network> From<Subscription<N::HeaderResponse>> for SubscriptionBackend<N
 #[cfg(feature = "http-subscription")]
 impl<N: Network> From<PollerBuilder<(U256,), Vec<BlockHash>>> for SubscriptionBackend<N> {
     fn from(value: PollerBuilder<(U256,), Vec<BlockHash>>) -> Self {
-        use futures_util::{StreamExt, stream};
+        use tokio_stream::StreamExt;
 
         let (sender, receiver) = mpsc::channel(value.channel_size());
 
-        // Spawn a task to forward block hashes to the channel
-        let stream = value.into_stream().flat_map(stream::iter);
+        let mut stream = value.into_stream();
         tokio::spawn(async move {
-            let mut stream = std::pin::pin!(stream);
-            while let Some(hash) = stream.next().await {
-                if sender.send(hash).await.is_err() {
-                    // Receiver dropped, stop polling
-                    break;
+            while let Some(hashes) = stream.next().await {
+                for hash in hashes {
+                    if sender.send(hash).await.is_err() {
+                        // Receiver dropped, stop polling
+                        break;
+                    }
                 }
             }
         });
@@ -204,6 +204,12 @@ impl<N: Network> RobustSubscription<N> {
         let allow_http_subscriptions = self.robust_provider.allow_http_subscriptions;
 
         let operation = move |provider: RootProvider<N>| async move {
+            // if HTTP subscriptions are enabled and the provider currently being tried is HTTP,
+            // we will attempt to connect using it.
+            // Otherwise try subscribing through a PubSub operation, and if the provider is HTTP
+            // just let it fail; the error will be non-retriable, so the algorithm will
+            // automatically switch to the next fallback provider (see
+            // `try_provider_with_timeout`).
             #[cfg(feature = "http-subscription")]
             {
                 let not_pubsub = provider.client().pubsub_frontend().is_none();
