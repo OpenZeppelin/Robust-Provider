@@ -781,17 +781,15 @@ mod tests {
             .build()
             .await?;
 
-        let result = robust.subscribe_blocks().await.unwrap_err();
+        let err = robust.subscribe_blocks().await.unwrap_err();
 
-        match result {
-            Error::RpcError(e) => {
-                assert!(matches!(
-                    e.as_ref(),
-                    RpcError::Transport(TransportErrorKind::PubsubUnavailable)
-                ));
-            }
-            other => panic!("Expected PubsubUnavailable error type, got: {other:?}"),
-        }
+        assert!(
+            matches!(
+                err,
+                Error::RpcError(RpcError::Transport(TransportErrorKind::PubsubUnavailable))
+            ),
+            "expected TransportErrorKind::PubsubUnavailable error type, got: {err:?}"
+        );
 
         Ok(())
     }

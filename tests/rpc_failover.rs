@@ -159,18 +159,10 @@ async fn test_operation_completes_when_provider_unavailable() -> anyhow::Result<
 
     // Should fail (connection refused) and not hang
     let err = result.expect_err("expected RPC error due to unavailable provider");
-    match err {
-        Error::RpcError(e) => {
-            let e = e.as_ref();
-            match e {
-                RpcError::Transport(TransportErrorKind::Custom(_)) => {}
-                other => panic!(
-                    "expected RpcError::Transport(TransportErrorKind::Custom), got {other:?}"
-                ),
-            }
-        }
-        other => panic!("expected Error::RpcError, got {other:?}"),
-    }
+    assert!(
+        matches!(err, Error::RpcError(RpcError::Transport(TransportErrorKind::Custom(_)))),
+        "expected TransportErrorKind::Custom, got: {err:?}"
+    );
     assert!(elapsed < timeout);
 
     Ok(())
