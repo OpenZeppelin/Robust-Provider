@@ -13,6 +13,11 @@
 //!
 //! * [`IntoRobustProvider`] - Convert types into a `RobustProvider`
 //! * [`IntoRootProvider`] - Convert types into an underlying root provider
+//!
+//! # Feature Flags
+//!
+//! * `http-subscription` - Enable HTTP-based polling subscriptions for providers without native
+//!   pubsub support
 
 mod builder;
 mod errors;
@@ -24,7 +29,4 @@ pub use builder::*;
 pub use errors::{CoreError, Error};
 pub use provider::RobustProvider;
 pub use provider_conversion::{IntoRobustProvider, IntoRootProvider};
-pub use subscription::{
-    DEFAULT_RECONNECT_INTERVAL, Error as SubscriptionError, RobustSubscription,
-    RobustSubscriptionStream,
-};
+pub use subscription::{DEFAULT_RECONNECT_INTERVAL, RobustSubscription, RobustSubscriptionStream};
