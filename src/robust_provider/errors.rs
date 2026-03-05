@@ -54,6 +54,10 @@ pub enum Error {
 /// It gets converted to [`enum@Error`] before being returned to users.
 #[derive(Error, Debug)]
 pub enum FailoverError {
+    /// The subscription channel was closed.
+    #[error("Subscription channel closed")]
+    Closed,
+
     /// The operation exceeded the configured timeout.
     #[error("Operation timed out")]
     Timeout,
@@ -72,6 +76,7 @@ impl From<RpcError<TransportErrorKind>> for FailoverError {
 impl From<FailoverError> for Error {
     fn from(err: FailoverError) -> Self {
         match err {
+            FailoverError::Closed => Error::Closed,
             FailoverError::Timeout => Error::Timeout,
             FailoverError::RpcError(RpcError::ErrorResp(ref err_resp))
                 if is_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
