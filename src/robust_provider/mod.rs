@@ -26,7 +26,7 @@ mod provider_conversion;
 mod subscription;
 
 pub use builder::*;
-pub use errors::{CoreError, Error};
+pub use errors::{Error, FailoverError};
 pub use provider::RobustProvider;
 pub use provider_conversion::{IntoRobustProvider, IntoRootProvider};
 pub use subscription::{DEFAULT_RECONNECT_INTERVAL, RobustSubscription, RobustSubscriptionStream};

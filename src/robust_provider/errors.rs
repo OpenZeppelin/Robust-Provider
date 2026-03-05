@@ -53,7 +53,7 @@ pub enum Error {
 /// This is an internal error type used during retry/failover operations.
 /// It gets converted to [`enum@Error`] before being returned to users.
 #[derive(Error, Debug)]
-pub enum CoreError {
+pub enum FailoverError {
     /// The operation exceeded the configured timeout.
     #[error("Operation timed out")]
     Timeout,
@@ -63,29 +63,29 @@ pub enum CoreError {
     RpcError(RpcError<TransportErrorKind>),
 }
 
-impl From<RpcError<TransportErrorKind>> for CoreError {
+impl From<RpcError<TransportErrorKind>> for FailoverError {
     fn from(err: RpcError<TransportErrorKind>) -> Self {
-        CoreError::RpcError(err)
+        FailoverError::RpcError(err)
     }
 }
 
-impl From<CoreError> for Error {
-    fn from(err: CoreError) -> Self {
+impl From<FailoverError> for Error {
+    fn from(err: FailoverError) -> Self {
         match err {
-            CoreError::Timeout => Error::Timeout,
-            CoreError::RpcError(RpcError::ErrorResp(ref err_resp))
+            FailoverError::Timeout => Error::Timeout,
+            FailoverError::RpcError(RpcError::ErrorResp(ref err_resp))
                 if is_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
             {
                 Error::BlockNotFound
             }
-            CoreError::RpcError(e) => Error::RpcError(e),
+            FailoverError::RpcError(e) => Error::RpcError(e),
         }
     }
 }
 
-impl From<TokioError::Elapsed> for CoreError {
+impl From<TokioError::Elapsed> for FailoverError {
     fn from(_: TokioError::Elapsed) -> Self {
-        CoreError::Timeout
+        FailoverError::Timeout
     }
 }
 

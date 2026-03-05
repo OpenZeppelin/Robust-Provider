@@ -22,7 +22,7 @@ use tokio_util::sync::ReusableBoxFuture;
 
 use crate::{
     Error,
-    robust_provider::{CoreError, RobustProvider},
+    robust_provider::{FailoverError, RobustProvider},
 };
 
 /// Default time interval between primary provider reconnection attempts
@@ -165,7 +165,7 @@ impl<N: Network> RobustSubscription<N> {
                         timeout_secs = subscription_timeout.as_secs(),
                         "Subscription timeout - no block received, switching provider"
                     );
-                    self.switch_to_fallback(CoreError::Timeout).await?;
+                    self.switch_to_fallback(FailoverError::Timeout).await?;
                 }
                 // Propagate these errors directly without failover
                 Err(Error::Closed) => return Err(Error::Closed),
@@ -174,7 +174,7 @@ impl<N: Network> RobustSubscription<N> {
                 // RPC errors trigger failover
                 Err(Error::RpcError(_e)) => {
                     warn!("Subscription RPC error, switching provider");
-                    self.switch_to_fallback(CoreError::Timeout).await?;
+                    self.switch_to_fallback(FailoverError::Timeout).await?;
                 }
             }
         }
@@ -244,7 +244,7 @@ impl<N: Network> RobustSubscription<N> {
         false
     }
 
-    async fn switch_to_fallback(&mut self, last_error: CoreError) -> Result<(), Error> {
+    async fn switch_to_fallback(&mut self, last_error: FailoverError) -> Result<(), Error> {
         // If we're on a fallback, try primary first before moving to next fallback
         if self.is_on_fallback() && self.try_reconnect_to_primary(true).await {
             return Ok(());
