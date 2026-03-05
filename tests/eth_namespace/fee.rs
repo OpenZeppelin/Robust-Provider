@@ -9,7 +9,6 @@ use alloy::{
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_get_blob_base_fee_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
@@ -26,7 +25,6 @@ async fn test_get_blob_base_fee_succeeds() -> anyhow::Result<()> {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_get_fee_history_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
 
@@ -49,7 +47,6 @@ async fn test_get_fee_history_succeeds() -> anyhow::Result<()> {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_get_gas_price_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
@@ -66,7 +63,6 @@ async fn test_get_gas_price_succeeds() -> anyhow::Result<()> {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_get_max_priority_fee_per_gas_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
@@ -83,7 +79,6 @@ async fn test_get_max_priority_fee_per_gas_succeeds() -> anyhow::Result<()> {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_estimate_eip1559_fees_succeeds() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
@@ -112,7 +107,6 @@ async fn test_estimate_eip1559_fees_with_default_estimator() -> anyhow::Result<(
 }
 
 #[tokio::test]
-#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_estimate_eip1559_fees_with_custom_estimator() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
 
@@ -136,7 +130,6 @@ async fn test_estimate_eip1559_fees_with_custom_estimator() -> anyhow::Result<()
 }
 
 #[tokio::test]
-#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_estimate_eip1559_fees_with_zero_priority_fee() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(50).await?;
 
@@ -160,7 +153,6 @@ async fn test_estimate_eip1559_fees_with_zero_priority_fee() -> anyhow::Result<(
 }
 
 #[tokio::test]
-#[ignore = "Flaky, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59"]
 async fn test_estimate_eip1559_fees_with_high_priority_fee() -> anyhow::Result<()> {
     let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(50).await?;
 
