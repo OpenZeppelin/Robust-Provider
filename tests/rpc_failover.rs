@@ -74,6 +74,9 @@ async fn test_rpc_cycles_through_multiple_fallbacks() -> anyhow::Result<()> {
     drop(anvil_primary);
     drop(anvil_fb1);
 
+    // give some time so that OS can actually finish killing Anvil processes
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
     // Should cycle through to fb2
     let block_num = robust.get_block_number().await?;
     assert_eq!(block_num, 30);
