@@ -1,0 +1,6 @@
+[test-groups]
+fee-tests = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(eth_namespace::fee::)'
+test-group = 'fee-tests'
