@@ -163,6 +163,26 @@ while let Some(result) = stream.next().await {
 - When a fallback fails, the primary is tried first before moving to the next fallback.
 - The `Lagged` error indicates the consumer is not keeping pace with incoming blocks.
 
+#### HTTP-based subscriptions (feature flag)
+
+By default, subscriptions use WebSocket/pubsub-capable providers. Normally, HTTP-only providers are skipped during subscription retries. If your environment only exposes HTTP endpoints, you can enable HTTP-based block subscriptions via polling using the `http-subscription` Cargo feature:
+
+```toml
+[dependencies]
+robust-provider = { version = "1.0.0", features = ["http-subscription"] }
+```
+
+With this feature enabled and `allow_http_subscriptions(true)` is set, those HTTP providers can also act as subscription sources via polling, and are treated like regular pubsub-capable providers in the retry/failover logic:
+
+```rust
+let robust = RobustProviderBuilder::new(http_provider)
+    .allow_http_subscriptions(true)
+    // Optional: tune how often to poll for new blocks (defaults to ~12s)
+    .poll_interval(Duration::from_secs(12))
+    .build()
+    .await?;
+```
+
 ---
 
 ## Provider Conversion

@@ -34,7 +34,10 @@ use alloy::{
     transports::{RpcError, TransportErrorKind},
 };
 
-use crate::{Error, block_not_found_doc, robust_provider::RobustSubscription};
+use crate::{
+    Error, block_not_found_doc,
+    robust_provider::{RobustSubscription, subscription::SubscriptionBackend},
+};
 
 /// Provider wrapper with built-in retry and timeout mechanisms.
 ///
@@ -50,6 +53,12 @@ pub struct RobustProvider<N: Network = Ethereum> {
     pub(crate) min_delay: Duration,
     pub(crate) reconnect_interval: Duration,
     pub(crate) subscription_buffer_capacity: usize,
+    /// Polling interval for HTTP-based subscriptions.
+    #[cfg(feature = "http-subscription")]
+    pub(crate) poll_interval: Duration,
+    /// Whether HTTP providers can participate in subscriptions via polling.
+    #[cfg(feature = "http-subscription")]
+    pub(crate) allow_http_subscriptions: bool,
 }
 
 impl<N: Network> RobustProvider<N> {
@@ -477,6 +486,10 @@ impl<N: Network> RobustProvider<N> {
     /// * Detects and recovers from lagged subscriptions
     /// * Periodically attempts to reconnect to the primary provider
     ///
+    /// When the `http-subscription` feature is enabled and
+    /// [`allow_http_subscriptions`](crate::RobustProviderBuilder::allow_http_subscriptions)
+    /// is set to `true`, HTTP providers can participate in subscriptions via polling.
+    ///
     /// This is a wrapper function for [`Provider::subscribe_blocks`].
     ///
     /// # Errors
@@ -486,21 +499,38 @@ impl<N: Network> RobustProvider<N> {
     /// * [`Error::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
     pub async fn subscribe_blocks(&self) -> Result<RobustSubscription<N>, Error> {
-        let subscription = self
-            .try_operation_with_failover(
-                move |provider| async move {
-                    provider
-                        .subscribe_blocks()
-                        .channel_size(self.subscription_buffer_capacity)
-                        .await
-                },
-                true,
-            )
+        let subscription: SubscriptionBackend<N> = self
+            .try_operation_with_failover(move |provider| async move {
+                // if HTTP subscriptions are enabled and the provider currently being tried is HTTP,
+                // we will attempt to connect using it.
+                // Otherwise try subscribing through a PubSub operation, and if the provider is HTTP
+                // just let it fail; the error will be non-retriable, so the algorithm will
+                // automatically switch to the next fallback provider (see
+                // `try_provider_with_timeout`).
+                #[cfg(feature = "http-subscription")]
+                {
+                    let not_pubsub = provider.client().pubsub_frontend().is_none();
+                    if not_pubsub && self.allow_http_subscriptions {
+                        return provider.watch_blocks().await.map(|builder| {
+                            builder
+                                .with_poll_interval(self.poll_interval)
+                                .with_channel_size(self.subscription_buffer_capacity)
+                                .into()
+                        });
+                    }
+                }
+                provider
+                    .subscribe_blocks()
+                    .channel_size(self.subscription_buffer_capacity)
+                    .await
+                    .map(Into::<SubscriptionBackend<N>>::into)
+            })
             .await?;
 
         Ok(RobustSubscription::new(subscription, self.clone()))
     }
 
+    // TODO: set watch blocks params from the RP itself
     robust_rpc!(fn watch_blocks() -> PollerBuilder<(U256,), Vec<BlockHash>>);
 
     /// Execute `operation` with exponential backoff and a total timeout.
@@ -512,8 +542,6 @@ impl<N: Network> RobustProvider<N> {
     /// If the timeout is exceeded and fallback providers are available, it will
     /// attempt to use each fallback provider in sequence.
     ///
-    /// If `require_pubsub` is true, providers that don't support pubsub will be skipped.
-    ///
     /// # Errors
     ///
     /// * [`CoreError::RpcError`] - if no fallback providers succeeded; contains the last error
@@ -523,7 +551,6 @@ impl<N: Network> RobustProvider<N> {
     pub async fn try_operation_with_failover<T: Debug, F, Fut>(
         &self,
         operation: F,
-        require_pubsub: bool,
     ) -> Result<T, CoreError>
     where
         F: Fn(RootProvider<N>) -> Fut,
@@ -534,7 +561,7 @@ impl<N: Network> RobustProvider<N> {
         match self.try_provider_with_timeout(primary, &operation).await {
             Ok(value) => Ok(value),
             Err(last_error) => self
-                .try_fallback_providers_from(&operation, require_pubsub, last_error, 0)
+                .try_fallback_providers_from(&operation, last_error, 0)
                 .await
                 .map(|(value, _)| value),
         }
@@ -544,7 +571,6 @@ impl<N: Network> RobustProvider<N> {
     pub(crate) async fn try_fallback_providers_from<T: Debug, F, Fut>(
         &self,
         operation: F,
-        require_pubsub: bool,
         mut last_error: CoreError,
         start_index: usize,
     ) -> Result<(T, usize), CoreError>
@@ -557,20 +583,11 @@ impl<N: Network> RobustProvider<N> {
         debug!(
             start_index = start_index,
             total_fallbacks = fallback_providers.len(),
-            require_pubsub = require_pubsub,
             "Primary provider failed, attempting fallback providers"
         );
 
         let fallback_iter = fallback_providers.iter().enumerate().skip(start_index);
         for (fallback_idx, provider) in fallback_iter {
-            if require_pubsub && !Self::supports_pubsub(provider) {
-                debug!(
-                    provider_index = fallback_idx,
-                    "Skipping fallback provider: pubsub not supported"
-                );
-                continue;
-            }
-
             trace!(
                 fallback_index = fallback_idx,
                 total_fallbacks = fallback_providers.len(),
@@ -644,12 +661,6 @@ impl<N: Network> RobustProvider<N> {
             .map_err(CoreError::from)
         }
     }
-
-    /// Check if a provider supports pubsub
-    #[must_use]
-    fn supports_pubsub(provider: &RootProvider<N>) -> bool {
-        provider.client().pubsub_frontend().is_some()
-    }
 }
 
 #[cfg(test)]
@@ -679,6 +690,10 @@ mod tests {
             min_delay: Duration::from_millis(min_delay),
             reconnect_interval: DEFAULT_RECONNECT_INTERVAL,
             subscription_buffer_capacity: DEFAULT_SUBSCRIPTION_BUFFER_CAPACITY,
+            #[cfg(feature = "http-subscription")]
+            poll_interval: crate::DEFAULT_POLL_INTERVAL,
+            #[cfg(feature = "http-subscription")]
+            allow_http_subscriptions: false,
         }
     }
 
@@ -689,14 +704,11 @@ mod tests {
         let call_count = AtomicUsize::new(0);
 
         let result = provider
-            .try_operation_with_failover(
-                |_| async {
-                    call_count.fetch_add(1, Ordering::SeqCst);
-                    let count = call_count.load(Ordering::SeqCst);
-                    Ok(count)
-                },
-                false,
-            )
+            .try_operation_with_failover(|_| async {
+                call_count.fetch_add(1, Ordering::SeqCst);
+                let count = call_count.load(Ordering::SeqCst);
+                Ok(count)
+            })
             .await;
 
         assert!(matches!(result, Ok(1)));
@@ -709,18 +721,15 @@ mod tests {
         let call_count = AtomicUsize::new(0);
 
         let result = provider
-            .try_operation_with_failover(
-                |_| async {
-                    call_count.fetch_add(1, Ordering::SeqCst);
-                    let count = call_count.load(Ordering::SeqCst);
-                    match count {
-                        3 => Ok(count),
-                        // retriable error
-                        _ => Err(TransportErrorKind::custom_str("429 Too Many Requests")),
-                    }
-                },
-                false,
-            )
+            .try_operation_with_failover(|_| async {
+                call_count.fetch_add(1, Ordering::SeqCst);
+                let count = call_count.load(Ordering::SeqCst);
+                match count {
+                    3 => Ok(count),
+                    // retriable error
+                    _ => Err(TransportErrorKind::custom_str("429 Too Many Requests")),
+                }
+            })
             .await;
 
         assert!(matches!(result, Ok(3)));
@@ -733,14 +742,11 @@ mod tests {
         let call_count = AtomicUsize::new(0);
 
         let result: Result<(), CoreError> = provider
-            .try_operation_with_failover(
-                |_| async {
-                    call_count.fetch_add(1, Ordering::SeqCst);
-                    // retriable error
-                    Err(TransportErrorKind::custom_str("429 Too Many Requests"))
-                },
-                false,
-            )
+            .try_operation_with_failover(|_| async {
+                call_count.fetch_add(1, Ordering::SeqCst);
+                // retriable error
+                Err(TransportErrorKind::custom_str("429 Too Many Requests"))
+            })
             .await;
 
         assert!(matches!(result, Err(CoreError::RpcError(_))));
@@ -753,13 +759,10 @@ mod tests {
         let provider = test_provider(call_timeout, 10, 1);
 
         let result = provider
-            .try_operation_with_failover(
-                move |_provider| async move {
-                    sleep(Duration::from_millis(call_timeout + 10)).await;
-                    Ok(42)
-                },
-                false,
-            )
+            .try_operation_with_failover(move |_provider| async move {
+                sleep(Duration::from_millis(call_timeout + 10)).await;
+                Ok(42)
+            })
             .await;
 
         assert!(matches!(result, Err(CoreError::Timeout)));

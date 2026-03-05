@@ -129,7 +129,6 @@ macro_rules! robust_rpc {
                         // Call the provider method with turbofish syntax if generics are present
                         provider.$method $(::<$($generic),+>)? ($($($arg),+)?).await
                     },
-                    false, // is_subscription = false
                 )
                 .await;
 
@@ -203,7 +202,6 @@ macro_rules! robust_rpc {
                             provider.$method $(::<$($generic),+>)? ($($arg),+).await
                         }
                     },
-                    false, // is_subscription = false
                 )
                 .await;
 
