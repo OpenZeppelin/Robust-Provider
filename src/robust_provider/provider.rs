@@ -544,9 +544,9 @@ impl<N: Network> RobustProvider<N> {
     ///
     /// # Errors
     ///
-    /// * [`CoreError::RpcError`] - if no fallback providers succeeded; contains the last error
+    /// * [`FailureError::RpcError`] - if no fallback providers succeeded; contains the last error
     ///   returned by the last provider attempted on the last retry.
-    /// * [`CoreError::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    /// * [`FailureError::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
     pub async fn try_operation_with_failover<T: Debug, F, Fut>(
         &self,

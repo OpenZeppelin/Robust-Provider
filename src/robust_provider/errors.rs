@@ -1,7 +1,7 @@
 //! Error types and RPC error classification for robust provider operations.
 //!
 //! This module provides:
-//! * Public error types ([`enum@Error`], [`CoreError`]) for provider operations
+//! * Public error types ([`enum@Error`], [`FailureError`]) for provider operations
 //! * RPC error classification logic to detect non-retryable errors from various Ethereum clients
 //!
 //! # Error Classification
