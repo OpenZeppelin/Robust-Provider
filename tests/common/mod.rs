@@ -33,7 +33,7 @@ pub fn safe_drop_anvil(mut anvil: AnvilInstance) {
         }
     }
     if let Err(err) = child.kill() {
-        eprintln!("alloy-node-bindings: failed to kill anvil process: {}", err);
+        eprintln!("alloy-node-bindings: failed to kill anvil process: {err}");
     }
     let _ = child.wait();
     std::mem::forget(anvil);
