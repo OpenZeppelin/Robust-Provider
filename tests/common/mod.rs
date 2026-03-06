@@ -14,25 +14,19 @@ use tokio::time::sleep;
 
 /// Safely drops an `AnvilInstance` by sending SIGTERM and waiting for the process to exit.
 /// This ensures the anvil process is fully terminated before returning.
-pub async fn safe_drop_anvil(mut anvil: AnvilInstance) {
-    tokio::task::spawn_blocking(move || {
-        let child = anvil.child_mut();
-        #[cfg(unix)]
-        {
-            let _ = std::process::Command::new("kill")
-                .arg("-SIGTERM")
-                .arg(child.id().to_string())
-                .output();
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = child.kill();
-        }
-        let _ = child.wait();
-        std::mem::forget(anvil);
-    })
-    .await
-    .expect("safe_drop_anvil task panicked");
+pub fn safe_drop_anvil(mut anvil: AnvilInstance) {
+    let child = anvil.child_mut();
+    #[cfg(unix)]
+    {
+        let _ =
+            std::process::Command::new("kill").arg("-SIGTERM").arg(child.id().to_string()).output();
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+    std::mem::forget(anvil);
 }
 
 alloy::sol! {

@@ -117,7 +117,7 @@ async fn test_ws_only_chain_works_with_http_subscriptions_enabled() -> anyhow::R
     assert!(subscription.is_empty());
 
     // Kill WS primary and ensure we can still fail over to WS fallback.
-    safe_drop_anvil(anvil_primary).await;
+    safe_drop_anvil(anvil_primary);
 
     tokio::spawn(async move {
         // sleep just enough before mining to ensure subscription switches to this fallback provider
@@ -168,7 +168,7 @@ async fn test_mixed_fallback_ordering_ws_to_http_to_ws() -> anyhow::Result<()> {
     assert_eq!(block.number, 1);
 
     // Kill WS primary to force failover to HTTP fallback.
-    safe_drop_anvil(anvil_ws_primary).await;
+    safe_drop_anvil(anvil_ws_primary);
     let http_clone = http_fallback.clone();
     let http_mining_task = tokio::spawn(async move {
         tokio::time::sleep(BUFFER_TIME).await;
@@ -204,7 +204,7 @@ async fn test_mixed_fallback_ordering_ws_to_http_to_ws() -> anyhow::Result<()> {
     }
 
     // Now kill HTTP fallback too, and ensure we can fail over to WS fallback.
-    safe_drop_anvil(anvil_http).await;
+    safe_drop_anvil(anvil_http);
     let ws2_clone = ws_fallback.clone();
     tokio::spawn(async move {
         // Wait long enough for:
@@ -330,7 +330,7 @@ async fn test_failover_ws_to_http_on_provider_death() -> anyhow::Result<()> {
     assert!(subscription.is_empty());
 
     // Kill WS provider - this will cause subscription to fail
-    safe_drop_anvil(anvil_ws).await;
+    safe_drop_anvil(anvil_ws);
 
     // Spawn task to mine repeatedly on HTTP after timeout triggers failover.
     // Mining just once can be flaky if it happens before the HTTP poller is fully established.
@@ -388,7 +388,7 @@ async fn test_failover_http_to_ws_on_provider_death() -> anyhow::Result<()> {
     assert_eq!(block.number, 1, "Should start on HTTP primary");
 
     // Kill HTTP provider
-    safe_drop_anvil(anvil_http).await;
+    safe_drop_anvil(anvil_http);
 
     // Mine on WS shortly after HTTP error is detected.
     // The HTTP poll will fail quickly (connection refused), triggering immediate failover to WS.
@@ -592,7 +592,7 @@ async fn test_all_providers_fail_returns_error() -> anyhow::Result<()> {
         .expect("recv error");
 
     // Kill the only provider
-    safe_drop_anvil(anvil).await;
+    safe_drop_anvil(anvil);
 
     // Next recv should eventually error (after timeout)
     let result = tokio::time::timeout(Duration::from_secs(5), subscription.recv()).await;
@@ -695,7 +695,7 @@ async fn test_poll_interval_propagated_from_builder() -> anyhow::Result<()> {
     assert!(subscription.is_empty());
 
     // Kill WS to force failover to HTTP
-    safe_drop_anvil(anvil_ws).await;
+    safe_drop_anvil(anvil_ws);
 
     // Mine on HTTP and wait for failover
     let http_clone = http_provider.clone();
@@ -776,7 +776,7 @@ async fn test_http_reconnect_validates_provider() -> anyhow::Result<()> {
     assert_eq!(block.number, 1);
 
     // Kill primary - subscription should failover to fallback
-    safe_drop_anvil(anvil_primary).await;
+    safe_drop_anvil(anvil_primary);
 
     // Trigger failover by waiting for timeout, then mine on fallback
     let fb_clone = fallback.clone();
@@ -846,8 +846,8 @@ async fn test_timeout_triggered_failover_with_multiple_fallbacks() -> anyhow::Re
     assert_eq!(block.number, 1);
 
     // Kill primary AND fallback1 - only fallback2 will work
-    safe_drop_anvil(anvil_primary).await;
-    safe_drop_anvil(anvil_fb1).await;
+    safe_drop_anvil(anvil_primary);
+    safe_drop_anvil(anvil_fb1);
 
     // Don't mine on fallback2 immediately - let timeouts trigger failover
     // After SHORT_TIMEOUT, primary poll fails -> try fallback1
@@ -897,8 +897,8 @@ async fn test_single_fallback_timeout_exhausts_providers() -> anyhow::Result<()>
     assert_eq!(block.number, 1);
 
     // Kill both providers
-    safe_drop_anvil(anvil_primary).await;
-    safe_drop_anvil(anvil_fb).await;
+    safe_drop_anvil(anvil_primary);
+    safe_drop_anvil(anvil_fb);
 
     // Don't mine anything - let it timeout and exhaust providers
     let result = tokio::time::timeout(Duration::from_secs(3), subscription.recv()).await;

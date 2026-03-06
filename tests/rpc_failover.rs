@@ -41,7 +41,7 @@ async fn test_rpc_failover_when_primary_dead() -> anyhow::Result<()> {
     assert_eq!(block_num, 10);
 
     // Kill primary
-    safe_drop_anvil(anvil_primary).await;
+    safe_drop_anvil(anvil_primary);
 
     // Should failover to fallback
     let block_num = robust.get_block_number().await?;
@@ -73,8 +73,8 @@ async fn test_rpc_cycles_through_multiple_fallbacks() -> anyhow::Result<()> {
         .await?;
 
     // Kill primary and first fallback
-    safe_drop_anvil(anvil_primary).await;
-    safe_drop_anvil(anvil_fb1).await;
+    safe_drop_anvil(anvil_primary);
+    safe_drop_anvil(anvil_fb1);
 
     // give some time so that OS can actually finish killing Anvil processes
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -101,8 +101,8 @@ async fn test_rpc_all_providers_fail() -> anyhow::Result<()> {
         .await?;
 
     // Kill all providers
-    safe_drop_anvil(anvil_primary).await;
-    safe_drop_anvil(anvil_fallback).await;
+    safe_drop_anvil(anvil_primary);
+    safe_drop_anvil(anvil_fallback);
 
     // Should fail after trying all providers
     let result = robust.get_block_number().await;
@@ -150,7 +150,7 @@ async fn test_operation_completes_when_provider_unavailable() -> anyhow::Result<
     // Create and immediately kill provider so endpoint doesn't exist
     let anvil = Anvil::new().try_spawn()?;
     let endpoint = anvil.endpoint_url();
-    safe_drop_anvil(anvil).await;
+    safe_drop_anvil(anvil);
 
     let provider = ProviderBuilder::new().connect_http(endpoint);
 
@@ -192,7 +192,7 @@ async fn test_get_accounts_failover() -> anyhow::Result<()> {
         .await?;
 
     // Kill primary
-    safe_drop_anvil(anvil_primary).await;
+    safe_drop_anvil(anvil_primary);
 
     let accounts = robust.get_accounts().await?;
     assert!(!accounts.is_empty());
@@ -218,7 +218,7 @@ async fn test_get_balance_failover() -> anyhow::Result<()> {
         .await?;
 
     // Kill primary
-    safe_drop_anvil(anvil_primary).await;
+    safe_drop_anvil(anvil_primary);
 
     let balance = robust.get_balance(address).await?;
     assert!(balance > alloy::primitives::U256::ZERO);
@@ -243,7 +243,7 @@ async fn test_get_block_failover() -> anyhow::Result<()> {
         .await?;
 
     // Kill primary
-    safe_drop_anvil(anvil_primary).await;
+    safe_drop_anvil(anvil_primary);
 
     let block = robust.get_block_by_number(BlockNumberOrTag::Number(3)).await?;
     assert_eq!(block.header.number, 3);

@@ -57,7 +57,7 @@ async fn watch_blocks_fails_over_when_primary_is_down() -> anyhow::Result<()> {
         .build()
         .await?;
 
-    safe_drop_anvil(anvil_primary).await;
+    safe_drop_anvil(anvil_primary);
 
     let poller = robust.watch_blocks().await?;
     let mut stream = poller.with_poll_interval(Duration::from_millis(50)).into_stream();
@@ -87,8 +87,8 @@ async fn watch_blocks_errors_when_all_providers_fail() -> anyhow::Result<()> {
         .build()
         .await?;
 
-    safe_drop_anvil(anvil_primary).await;
-    safe_drop_anvil(anvil_fallback).await;
+    safe_drop_anvil(anvil_primary);
+    safe_drop_anvil(anvil_fallback);
 
     let err = robust.watch_blocks().await.unwrap_err();
     assert!(matches!(err, Error::RpcError(_) | Error::Timeout));
