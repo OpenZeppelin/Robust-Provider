@@ -1,7 +1,7 @@
 //! Error types and RPC error classification for robust provider operations.
 //!
 //! This module provides:
-//! * Public error types ([`enum@Error`], [`CoreError`]) for provider operations
+//! * Public error types ([`enum@Error`], [`FailoverError`]) for provider operations
 //! * RPC error classification logic to detect non-retryable errors from various Ethereum clients
 //!
 //! # Error Classification
@@ -13,14 +13,12 @@
 //! Some clients may use different error codes/messages; errors that don't match known
 //! patterns will surface as [`Error::RpcError`] and will be retried by default.
 
-use std::sync::Arc;
-
 use alloy::transports::{RpcError, TransportErrorKind};
 use thiserror::Error;
 use tokio::{sync::broadcast::error::RecvError, time::error as TokioError};
 
 /// Errors that can occur when using [`super::RobustProvider`].
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug)]
 pub enum Error {
     /// The operation exceeded the configured timeout.
     #[error("Operation timed out")]
@@ -28,7 +26,7 @@ pub enum Error {
 
     /// An RPC error occurred after exhausting all retry attempts.
     #[error("RPC call failed after exhausting all retry attempts: {0}")]
-    RpcError(Arc<RpcError<TransportErrorKind>>),
+    RpcError(RpcError<TransportErrorKind>),
 
     /// The requested block was not found.
     ///
@@ -55,7 +53,11 @@ pub enum Error {
 /// This is an internal error type used during retry/failover operations.
 /// It gets converted to [`enum@Error`] before being returned to users.
 #[derive(Error, Debug)]
-pub enum CoreError {
+pub enum FailoverError {
+    /// The subscription channel was closed.
+    #[error("Subscription channel closed")]
+    Closed,
+
     /// The operation exceeded the configured timeout.
     #[error("Operation timed out")]
     Timeout,
@@ -65,35 +67,36 @@ pub enum CoreError {
     RpcError(RpcError<TransportErrorKind>),
 }
 
-impl From<RpcError<TransportErrorKind>> for CoreError {
+impl From<RpcError<TransportErrorKind>> for FailoverError {
     fn from(err: RpcError<TransportErrorKind>) -> Self {
-        CoreError::RpcError(err)
+        FailoverError::RpcError(err)
     }
 }
 
-impl From<CoreError> for Error {
-    fn from(err: CoreError) -> Self {
+impl From<FailoverError> for Error {
+    fn from(err: FailoverError) -> Self {
         match err {
-            CoreError::Timeout => Error::Timeout,
-            CoreError::RpcError(RpcError::ErrorResp(ref err_resp))
+            FailoverError::Closed => Error::Closed,
+            FailoverError::Timeout => Error::Timeout,
+            FailoverError::RpcError(RpcError::ErrorResp(ref err_resp))
                 if is_block_not_found(err_resp.code, err_resp.message.as_ref()) =>
             {
                 Error::BlockNotFound
             }
-            CoreError::RpcError(e) => Error::RpcError(Arc::new(e)),
+            FailoverError::RpcError(e) => Error::RpcError(e),
         }
     }
 }
 
-impl From<TokioError::Elapsed> for CoreError {
+impl From<TokioError::Elapsed> for FailoverError {
     fn from(_: TokioError::Elapsed) -> Self {
-        CoreError::Timeout
+        FailoverError::Timeout
     }
 }
 
 impl From<RpcError<TransportErrorKind>> for Error {
     fn from(err: RpcError<TransportErrorKind>) -> Self {
-        Error::RpcError(Arc::new(err))
+        Error::RpcError(err)
     }
 }
 
