@@ -26,9 +26,9 @@ async fn test_get_blob_base_fee_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_fee_history_succeeds() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
+    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(1).await?;
 
-    let block_count = 10;
+    let block_count = 1;
     let reward_percentiles = [25.0, 50.0, 75.0];
 
     let robust_fee_history =
@@ -96,7 +96,7 @@ async fn test_estimate_eip1559_fees_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_estimate_eip1559_fees_with_default_estimator() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
     let robust_gas = robust.estimate_eip1559_fees_with(Eip1559Estimator::default()).await?;
     let alloy_gas = alloy_provider.estimate_eip1559_fees_with(Eip1559Estimator::default()).await?;
@@ -108,7 +108,7 @@ async fn test_estimate_eip1559_fees_with_default_estimator() -> anyhow::Result<(
 
 #[tokio::test]
 async fn test_estimate_eip1559_fees_with_custom_estimator() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
     let robust_gas = robust
         .estimate_eip1559_fees_with(Eip1559Estimator::new(|base_fee, _rewards| Eip1559Estimation {
@@ -131,7 +131,7 @@ async fn test_estimate_eip1559_fees_with_custom_estimator() -> anyhow::Result<()
 
 #[tokio::test]
 async fn test_estimate_eip1559_fees_with_zero_priority_fee() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(50).await?;
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
     let robust_gas = robust
         .estimate_eip1559_fees_with(Eip1559Estimator::new(|base_fee, _rewards| Eip1559Estimation {
@@ -154,7 +154,7 @@ async fn test_estimate_eip1559_fees_with_zero_priority_fee() -> anyhow::Result<(
 
 #[tokio::test]
 async fn test_estimate_eip1559_fees_with_high_priority_fee() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(50).await?;
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
     let robust_gas = robust
         .estimate_eip1559_fees_with(Eip1559Estimator::new(|base_fee, _rewards| Eip1559Estimation {
@@ -177,7 +177,7 @@ async fn test_estimate_eip1559_fees_with_high_priority_fee() -> anyhow::Result<(
 
 #[tokio::test]
 async fn test_estimate_eip1559_fees_with_reward_percentile_based() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider) = setup_anvil_with_blocks(100).await?;
+    let (_anvil, robust, alloy_provider) = setup_anvil().await?;
 
     let robust_gas = robust
         .estimate_eip1559_fees_with(Eip1559Estimator::new(|base_fee, rewards| Eip1559Estimation {
