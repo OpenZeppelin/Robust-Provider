@@ -10,6 +10,7 @@ use alloy::{
     providers::{Provider, ProviderBuilder, RootProvider, ext::AnvilApi},
 };
 use robust_provider::{RobustProvider, RobustProviderBuilder};
+use tokio::time::sleep;
 
 alloy::sol! {
     // Built directly with solc 0.8.30+commit.73712a01.Darwin.appleclang
@@ -66,6 +67,9 @@ pub async fn setup_anvil_with_blocks(
 ) -> anyhow::Result<(AnvilInstance, RobustProvider, impl Provider)> {
     let (anvil, robust, alloy_provider) = setup_anvil().await?;
     alloy_provider.anvil_mine(Some(num_blocks), None).await?;
+    // some tests rely on blocks being cached, this allows time for blocks to be propelry cached in
+    // foundry
+    sleep(Duration::from_millis(200)).await;
     Ok((anvil, robust, alloy_provider))
 }
 
