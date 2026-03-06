@@ -68,7 +68,8 @@ pub async fn setup_anvil_with_blocks(
     let (anvil, robust, alloy_provider) = setup_anvil().await?;
     alloy_provider.anvil_mine(Some(num_blocks), None).await?;
     // some tests rely on blocks being cached, this allows time for blocks to be propelry cached in
-    // foundry
+    // foundry.
+    // for more info, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59#issuecomment-4010684560
     sleep(Duration::from_millis(200)).await;
     Ok((anvil, robust, alloy_provider))
 }
