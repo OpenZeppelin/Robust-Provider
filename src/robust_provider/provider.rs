@@ -6,7 +6,7 @@ use backon::{ExponentialBuilder, Retryable};
 use serde_json::value::RawValue;
 use tokio::time::timeout;
 
-use super::errors::{CoreError, is_retryable_error};
+use super::errors::{FailoverError, is_retryable_error};
 use alloy::{
     consensus::{BlockHeader, TrieAccount},
     eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
@@ -544,14 +544,14 @@ impl<N: Network> RobustProvider<N> {
     ///
     /// # Errors
     ///
-    /// * [`CoreError::RpcError`] - if no fallback providers succeeded; contains the last error
+    /// * [`FailoverError::RpcError`] - if no fallback providers succeeded; contains the last error
     ///   returned by the last provider attempted on the last retry.
-    /// * [`CoreError::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
+    /// * [`FailoverError::Timeout`] - if the overall operation timeout elapses (i.e. exceeds
     ///   `call_timeout`).
     pub async fn try_operation_with_failover<T: Debug, F, Fut>(
         &self,
         operation: F,
-    ) -> Result<T, CoreError>
+    ) -> Result<T, FailoverError>
     where
         F: Fn(RootProvider<N>) -> Fut,
         Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
@@ -571,9 +571,9 @@ impl<N: Network> RobustProvider<N> {
     pub(crate) async fn try_fallback_providers_from<T: Debug, F, Fut>(
         &self,
         operation: F,
-        mut last_error: CoreError,
+        mut last_error: FailoverError,
         start_index: usize,
-    ) -> Result<(T, usize), CoreError>
+    ) -> Result<(T, usize), FailoverError>
     where
         F: Fn(RootProvider<N>) -> Fut,
         Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
@@ -624,7 +624,7 @@ impl<N: Network> RobustProvider<N> {
         &self,
         provider: &RootProvider<N>,
         operation: F,
-    ) -> impl Future<Output = Result<T, CoreError>>
+    ) -> impl Future<Output = Result<T, FailoverError>>
     where
         F: Fn(RootProvider<N>) -> Fut,
         Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
@@ -657,8 +657,8 @@ impl<N: Network> RobustProvider<N> {
                     .sleep(tokio::time::sleep),
             )
             .await
-            .map_err(CoreError::from)?
-            .map_err(CoreError::from)
+            .map_err(FailoverError::from)?
+            .map_err(FailoverError::from)
         }
     }
 }
@@ -741,7 +741,7 @@ mod tests {
 
         let call_count = AtomicUsize::new(0);
 
-        let result: Result<(), CoreError> = provider
+        let result: Result<(), FailoverError> = provider
             .try_operation_with_failover(|_| async {
                 call_count.fetch_add(1, Ordering::SeqCst);
                 // retriable error
@@ -749,7 +749,7 @@ mod tests {
             })
             .await;
 
-        assert!(matches!(result, Err(CoreError::RpcError(_))));
+        assert!(matches!(result, Err(FailoverError::RpcError(_))));
         assert_eq!(call_count.load(Ordering::SeqCst), 3);
     }
 
@@ -765,7 +765,7 @@ mod tests {
             })
             .await;
 
-        assert!(matches!(result, Err(CoreError::Timeout)));
+        assert!(matches!(result, Err(FailoverError::Timeout)));
     }
 
     #[tokio::test]
@@ -781,17 +781,15 @@ mod tests {
             .build()
             .await?;
 
-        let result = robust.subscribe_blocks().await.unwrap_err();
+        let err = robust.subscribe_blocks().await.unwrap_err();
 
-        match result {
-            Error::RpcError(e) => {
-                assert!(matches!(
-                    e.as_ref(),
-                    RpcError::Transport(TransportErrorKind::PubsubUnavailable)
-                ));
-            }
-            other => panic!("Expected PubsubUnavailable error type, got: {other:?}"),
-        }
+        assert!(
+            matches!(
+                err,
+                Error::RpcError(RpcError::Transport(TransportErrorKind::PubsubUnavailable))
+            ),
+            "expected TransportErrorKind::PubsubUnavailable error type, got: {err:?}"
+        );
 
         Ok(())
     }

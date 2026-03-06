@@ -814,19 +814,17 @@ async fn test_subscribe_fails_when_all_providers_lack_pubsub() -> anyhow::Result
         .build()
         .await?;
 
-    let result = robust.subscribe_blocks().await.unwrap_err();
+    let err = robust.subscribe_blocks().await.unwrap_err();
 
-    match result {
-        robust_provider::Error::RpcError(e) => {
-            assert!(matches!(
-                e.as_ref(),
-                alloy::transports::RpcError::Transport(
-                    alloy::transports::TransportErrorKind::PubsubUnavailable
-                )
-            ));
-        }
-        other => panic!("Expected PubsubUnavailable error type, got: {other:?}"),
-    }
+    assert!(
+        matches!(
+            err,
+            robust_provider::Error::RpcError(alloy::transports::RpcError::Transport(
+                alloy::transports::TransportErrorKind::PubsubUnavailable
+            )),
+        ),
+        "expected TransportErrorKind::PubsubUnavailable error type, got: {err:?}"
+    );
 
     Ok(())
 }
