@@ -18,12 +18,22 @@ pub fn safe_drop_anvil(mut anvil: AnvilInstance) {
     let child = anvil.child_mut();
     #[cfg(unix)]
     {
-        let _ =
-            std::process::Command::new("kill").arg("-SIGTERM").arg(child.id().to_string()).output();
+        use std::process::Command;
+
+        let out = Command::new("kill")
+            .arg("-SIGTERM")
+            .arg(child.id().to_string())
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if out {
+            let _ = child.wait();
+            return;
+        }
     }
-    #[cfg(not(unix))]
-    {
-        let _ = child.kill();
+    if let Err(err) = child.kill() {
+        eprintln!("alloy-node-bindings: failed to kill anvil process: {}", err);
     }
     let _ = child.wait();
     std::mem::forget(anvil);
