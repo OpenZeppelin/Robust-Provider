@@ -19,6 +19,8 @@ use robust_provider::{
 use tokio::time::sleep;
 use tokio_stream::StreamExt;
 
+use crate::common::safe_drop_anvil;
+
 // ============================================================================
 // Test Helpers
 // ============================================================================
@@ -390,7 +392,7 @@ async fn test_single_fallback_provider() -> anyhow::Result<()> {
     assert_next_block!(stream, 1);
 
     // Kill primary so reconnect attempts fail
-    drop(anvil_pp);
+    safe_drop_anvil(anvil_pp);
 
     // PP -> FB
     trigger_failover(&mut stream, fallback.clone(), 1).await?;
@@ -423,7 +425,7 @@ async fn subscription_cycles_through_multiple_fallbacks() -> anyhow::Result<()> 
     assert_next_block!(stream, 1);
 
     // Kill primary - all future PP reconnection attempts will fail
-    drop(anvil_pp);
+    safe_drop_anvil(anvil_pp);
 
     // PP times out -> FP1
     trigger_failover(&mut stream, fb_1.clone(), 1).await?;
@@ -468,7 +470,7 @@ async fn test_many_fallback_providers() -> anyhow::Result<()> {
     assert_next_block!(stream, 1);
 
     // Kill primary
-    drop(anvil_pp);
+    safe_drop_anvil(anvil_pp);
 
     // Cycle through all fallbacks
     trigger_failover(&mut stream, fb_1.clone(), 1).await?;
@@ -668,7 +670,7 @@ async fn test_multiple_failed_reconnection_attempts() -> anyhow::Result<()> {
     assert_next_block!(stream, 1);
 
     // Kill primary
-    drop(anvil_pp);
+    safe_drop_anvil(anvil_pp);
 
     // Failover to fb_1 (primary is dead)
     trigger_failover(&mut stream, fb_1.clone(), 1).await?;
@@ -739,7 +741,7 @@ async fn test_backend_gone_error_propagation() -> anyhow::Result<()> {
     assert_next_block!(stream, 1);
 
     // Kill the provider
-    drop(anvil);
+    safe_drop_anvil(anvil);
 
     // Should get BackendGone or Timeout error
     assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));
@@ -764,7 +766,7 @@ async fn test_immediate_consecutive_failures() -> anyhow::Result<()> {
     assert_next_block!(stream, 1);
 
     // Kill provider immediately
-    drop(anvil);
+    safe_drop_anvil(anvil);
 
     // First failure
     assert!(matches!(stream.next().await.unwrap(), Err(Error::Timeout)));

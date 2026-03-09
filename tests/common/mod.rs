@@ -10,6 +10,32 @@ use alloy::{
     providers::{Provider, ProviderBuilder, RootProvider, ext::AnvilApi},
 };
 use robust_provider::{RobustProvider, RobustProviderBuilder};
+use tokio::time::sleep;
+
+/// Safely drops an `AnvilInstance` by sending SIGTERM and waiting for the process to exit.
+/// This ensures the anvil process is fully terminated before returning.
+pub fn safe_drop_anvil(mut anvil: AnvilInstance) {
+    let child = anvil.child_mut();
+    #[cfg(unix)]
+    {
+        use std::process::Command;
+
+        if let Ok(out) = Command::new("kill").arg("-SIGTERM").arg(child.id().to_string()).output() &&
+            out.status.success()
+        {
+            let _ = child.wait();
+            return;
+        }
+    }
+
+    if let Err(err) = child.kill() {
+        eprintln!("alloy-node-bindings: failed to kill anvil process: {err}");
+    } else {
+        let _ = child.wait();
+    }
+
+    std::mem::forget(anvil);
+}
 
 alloy::sol! {
     // Built directly with solc 0.8.30+commit.73712a01.Darwin.appleclang
@@ -66,6 +92,10 @@ pub async fn setup_anvil_with_blocks(
 ) -> anyhow::Result<(AnvilInstance, RobustProvider, impl Provider)> {
     let (anvil, robust, alloy_provider) = setup_anvil().await?;
     alloy_provider.anvil_mine(Some(num_blocks), None).await?;
+    // some tests rely on blocks being cached, this allows time for blocks to be propelry cached in
+    // foundry.
+    // for more info, see: https://github.com/OpenZeppelin/Robust-Provider/issues/59#issuecomment-4010684560
+    sleep(Duration::from_millis(200)).await;
     Ok((anvil, robust, alloy_provider))
 }
 
