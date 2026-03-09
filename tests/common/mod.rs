@@ -20,14 +20,9 @@ pub fn safe_drop_anvil(mut anvil: AnvilInstance) {
     {
         use std::process::Command;
 
-        let out = Command::new("kill")
-            .arg("-SIGTERM")
-            .arg(child.id().to_string())
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if out {
+        if let Ok(out) = Command::new("kill").arg("-SIGTERM").arg(child.id().to_string()).output() &&
+            out.status.success()
+        {
             let _ = child.wait();
             return;
         }
