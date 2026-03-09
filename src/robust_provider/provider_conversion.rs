@@ -23,12 +23,6 @@ pub trait IntoRootProvider<N: Network = Ethereum> {
     fn into_root_provider(self) -> impl Future<Output = Result<RootProvider<N>, Error>> + Send;
 }
 
-impl<N: Network> IntoRootProvider<N> for RobustProvider<N> {
-    async fn into_root_provider(self) -> Result<RootProvider<N>, Error> {
-        Ok(self.primary().to_owned())
-    }
-}
-
 impl<N: Network> IntoRootProvider<N> for RootProvider<N> {
     async fn into_root_provider(self) -> Result<RootProvider<N>, Error> {
         Ok(self)
@@ -97,7 +91,65 @@ pub trait IntoRobustProvider<N: Network = Ethereum> {
     fn into_robust_provider(self) -> impl Future<Output = Result<RobustProvider<N>, Error>> + Send;
 }
 
-impl<N: Network, P: IntoRootProvider<N> + Send + 'static> IntoRobustProvider<N> for P {
+impl<N: Network> IntoRobustProvider<N> for RobustProvider<N> {
+    async fn into_robust_provider(self) -> Result<RobustProvider<N>, Error> {
+        Ok(self)
+    }
+}
+
+impl<N: Network> IntoRobustProvider<N> for RootProvider<N> {
+    async fn into_robust_provider(self) -> Result<RobustProvider<N>, Error> {
+        RobustProviderBuilder::new(self).build().await
+    }
+}
+
+impl<N: Network> IntoRobustProvider<N> for &str {
+    async fn into_robust_provider(self) -> Result<RobustProvider<N>, Error> {
+        RobustProviderBuilder::new(self).build().await
+    }
+}
+
+impl<N: Network> IntoRobustProvider<N> for Url {
+    async fn into_robust_provider(self) -> Result<RobustProvider<N>, Error> {
+        RobustProviderBuilder::new(self).build().await
+    }
+}
+
+impl<F, P, N> IntoRobustProvider<N> for FillProvider<F, P, N>
+where
+    F: TxFiller<N> + Send + 'static,
+    P: Provider<N> + Send + 'static,
+    N: Network,
+{
+    async fn into_robust_provider(self) -> Result<RobustProvider<N>, Error> {
+        RobustProviderBuilder::new(self).build().await
+    }
+}
+
+impl<P, N> IntoRobustProvider<N> for CacheProvider<P, N>
+where
+    P: Provider<N> + Send + 'static,
+    N: Network,
+{
+    async fn into_robust_provider(self) -> Result<RobustProvider<N>, Error> {
+        RobustProviderBuilder::new(self).build().await
+    }
+}
+
+impl<N> IntoRobustProvider<N> for DynProvider<N>
+where
+    N: Network,
+{
+    async fn into_robust_provider(self) -> Result<RobustProvider<N>, Error> {
+        RobustProviderBuilder::new(self).build().await
+    }
+}
+
+impl<P, N> IntoRobustProvider<N> for CallBatchProvider<P, N>
+where
+    P: Provider<N> + Send + 'static,
+    N: Network,
+{
     async fn into_robust_provider(self) -> Result<RobustProvider<N>, Error> {
         RobustProviderBuilder::new(self).build().await
     }
