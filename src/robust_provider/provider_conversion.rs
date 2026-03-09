@@ -261,7 +261,7 @@ mod tests {
         let root_provider = fill_provider.root().to_owned();
 
         let converted: RobustProvider<Ethereum> =
-            root_provider.to_owned().into_robust_provider().await?;
+            root_provider.clone().into_robust_provider().await?;
         root_provider.into_robust_provider().await?;
 
         assert_eq!(converted.call_timeout, DEFAULT_CALL_TIMEOUT);
