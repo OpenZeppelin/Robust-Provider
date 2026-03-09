@@ -43,7 +43,7 @@ Add `robust-provider` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-robust-provider = "1.0.0"
+robust-provider = "1.0.1"
 ```
 
 Create a robust provider with automatic retries and fallback:
@@ -169,7 +169,7 @@ By default, subscriptions use WebSocket/pubsub-capable providers. Normally, HTTP
 
 ```toml
 [dependencies]
-robust-provider = { version = "1.0.0", features = ["http-subscription"] }
+robust-provider = { version = "1.0.1", features = ["http-subscription"] }
 ```
 
 With this feature enabled and `allow_http_subscriptions(true)` is set, those HTTP providers can also act as subscription sources via polling, and are treated like regular pubsub-capable providers in the retry/failover logic:
