@@ -43,7 +43,7 @@ Add `robust-provider` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-robust-provider = "1.0.0"
+robust-provider = "1.0.1"
 ```
 
 Create a robust provider with automatic retries and fallback:
