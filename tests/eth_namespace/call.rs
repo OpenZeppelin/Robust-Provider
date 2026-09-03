@@ -129,12 +129,18 @@ async fn test_estimate_gas_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_simulate_succeeds() -> anyhow::Result<()> {
-    let (_anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
+    let (anvil, robust, alloy_provider, counter) = setup_anvil_with_contract().await?;
 
+    // Anvil@1.8.1 sets `validation: true`, which requires a funded sender and fees
+    // that cover the base fee.
+    let fees = alloy_provider.estimate_eip1559_fees().await?;
     let get_count_call = counter.getCount();
     let tx = TransactionRequest::default()
+        .with_from(anvil.addresses()[0])
         .with_to(*counter.address())
-        .with_input(get_count_call.calldata().clone());
+        .with_input(get_count_call.calldata().clone())
+        .with_max_fee_per_gas(fees.max_fee_per_gas)
+        .with_max_priority_fee_per_gas(fees.max_priority_fee_per_gas);
 
     let sim_block = SimBlock { calls: vec![tx], ..Default::default() };
     let request = SimulatePayload {
