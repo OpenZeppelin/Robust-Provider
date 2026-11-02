@@ -141,6 +141,10 @@ mod geth {
     // Reference: <https://github.com/ethereum/go-ethereum/blob/494908a8523af0e67d22d7930df15787ca5776b2/rpc/errors.go#L61>
     pub const DEFAULT_ERROR_CODE: i64 = -32000;
 
+    // Code returned by Geth for invalid parameter errors.
+    // Reference: <https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L55>
+    pub const INVALID_PARAMS_ERROR_CODE: i64 = -32602;
+
     pub fn is_block_not_found(code: i64, message: &str) -> bool {
         if code != DEFAULT_ERROR_CODE {
             return false;
@@ -177,13 +181,18 @@ mod geth {
         matches!(
             (code, message),
             (
-                DEFAULT_ERROR_CODE,
-                // https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L39-L46
+                // Geth v1.17.0 returns these with INVALID_PARAMS_ERROR_CODE; older releases use
+                // DEFAULT_ERROR_CODE.
+                DEFAULT_ERROR_CODE | INVALID_PARAMS_ERROR_CODE,
+                // https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L39-L42
                 "invalid block range params" |
                     "block range extends beyond current head block" |
                     "can't specify fromBlock/toBlock with blockHash" |
-                    "pending logs are not supported" |
-                    "unknown block" |
+                    "pending logs are not supported"
+            ) | (
+                DEFAULT_ERROR_CODE,
+                // https://github.com/ethereum/go-ethereum/blob/ef815c59a207d50668afb343811ed7ff02cc640b/eth/filters/api.go#L43-L46
+                "unknown block" |
                     "exceed max topics" |
                     "exceed max addresses or topics per search position" |
                     "filter not found"
@@ -259,9 +268,22 @@ mod tests {
         ));
         assert!(geth::is_invalid_log_filter(-32000, "filter not found"));
 
+        // Geth v1.17.0+ invalid params errors
+        assert!(geth::is_invalid_log_filter(-32602, "invalid block range params"));
+        assert!(geth::is_invalid_log_filter(
+            -32602,
+            "block range extends beyond current head block"
+        ));
+        assert!(geth::is_invalid_log_filter(
+            -32602,
+            "can't specify fromBlock/toBlock with blockHash"
+        ));
+        assert!(geth::is_invalid_log_filter(-32602, "pending logs are not supported"));
+
         // Non-matching
         assert!(!geth::is_invalid_log_filter(-32000, "some other error"));
         assert!(!geth::is_invalid_log_filter(-32001, "invalid block range params"));
+        assert!(!geth::is_invalid_log_filter(-32602, "filter not found"));
     }
 
     #[test]
@@ -284,6 +306,8 @@ mod tests {
         assert!(!is_retryable_error(-32000, "exceed max topics"));
         assert!(!is_retryable_error(-32000, "exceed max addresses or topics per search position"));
         assert!(!is_retryable_error(-32000, "filter not found"));
+        assert!(!is_retryable_error(-32602, "invalid block range params"));
+        assert!(!is_retryable_error(-32602, "block range extends beyond current head block"));
 
         // Should retry these (unknown errors)
         assert!(is_retryable_error(-32000, "some transient error"));
