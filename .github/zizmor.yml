@@ -1,0 +1,5 @@
+rules:
+  dependabot-cooldown:
+    # Updates are applied as soon as Dependabot proposes them.
+    ignore:
+      - dependabot.yml
